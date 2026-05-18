@@ -6,8 +6,8 @@ from typing import Any, Callable
 from firebase_admin import auth, firestore
 from firebase_functions import https_fn
 
-from config import FIRESTORE_DATABASE_ID
 from bks_pipeline_core.models.user import TIER_EXPIRED, TIER_TRIAL, UserDoc
+from bks_pipeline_core.sport_config import get_active_config
 
 # firebase_functions stubs don't export Response; access at runtime only.
 _Response = https_fn.Response  # type: ignore[attr-defined]
@@ -23,7 +23,7 @@ def _get_or_create_user(uid: str) -> UserDoc:
     trial-tier user (graceful degradation — never hard-block due to infra error).
     """
     try:
-        db = firestore.client(database_id=FIRESTORE_DATABASE_ID)
+        db = firestore.client(database_id=get_active_config().firestore_database_id)
         doc_ref = db.collection("users").document(uid)
         doc = doc_ref.get()
         if doc.exists:

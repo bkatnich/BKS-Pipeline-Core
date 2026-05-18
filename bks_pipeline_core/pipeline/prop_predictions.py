@@ -11,13 +11,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from config import PROP_EDGE_DISPLAY_THRESHOLD
 from bks_pipeline_core.pipeline.platt import (
     apply_platt,
     compute_stat_distributions,
     no_vig_probability,
     prob_over_line,
 )
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ def build_prop_predictions(
 
             # Edge = calibrated model prob - no-vig market prob.
             edge = round(calibrated_prob - nv_prob, 4)
-            has_edge = edge >= PROP_EDGE_DISPLAY_THRESHOLD
+            has_edge = edge >= get_active_config().prop_edge_display_threshold
 
             line_key = f"{stat}_{line_val}"
             prop_line_docs[line_key] = {

@@ -2,7 +2,6 @@ import logging
 from collections import defaultdict
 from typing import Any
 
-from config import DEFENSE_GAME_WINDOW
 from bks_pipeline_core.pipeline.scoring import fantasy_score, fantasy_score_fd, parse_minutes
 from bks_pipeline_core.sport_config import get_active_config
 
@@ -24,7 +23,7 @@ def compute_team_defense(
 
     Aggregates raw stats rows (as returned by fetch_player_stats_batch) to produce
     defensive ratings for each team at each position bucket using both DraftKings and
-    FanDuel scoring. Only the most recent DEFENSE_GAME_WINDOW game-appearances per
+    FanDuel scoring. Only the most recent cfg.defense_game_window game-appearances per
     (team, position) pair are used.
 
     Args:
@@ -123,7 +122,7 @@ def compute_team_defense(
         result: dict[str, dict[str, float]] = defaultdict(dict)
         for (opp_abbr, pos_bucket), obs in obs_dict.items():
             obs.sort(key=lambda x: x[0])
-            recent = obs[-DEFENSE_GAME_WINDOW:]
+            recent = obs[-cfg.defense_game_window:]
             avg = round(sum(v for _, v in recent) / len(recent), 2)
             result[opp_abbr][pos_bucket] = avg
         return dict(result)
@@ -136,7 +135,7 @@ def compute_team_defense(
 
     pace_map: dict[str, float] = {}
     for abbr, games in team_game_poss.items():
-        recent = sorted(games)[-DEFENSE_GAME_WINDOW:]
+        recent = sorted(games)[-cfg.defense_game_window:]
         pace_map[abbr] = round(sum(recent) / len(recent), 1)
 
     defense_dk = _build(observations)

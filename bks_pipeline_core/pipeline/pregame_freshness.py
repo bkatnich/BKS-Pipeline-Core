@@ -17,14 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any  # noqa: F401 — used in FreshnessResult dataclass fields
 
-from config import (
-    BALL_DONT_LIE_API_KEY,
-    LINEUP_STALE_MINUTES,
-    PREGAME_DEDUP_WINDOW_MINUTES,
-    PREGAME_INJURY_STALE_MINUTES,
-    PREGAME_ODDS_STALE_MINUTES,
-    PREGAME_TRENDS_STALE_MINUTES,
-)
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -158,18 +151,19 @@ def check_game_data_freshness(
     # --- Injuries ---
     injury_ts = _max_timestamp_for_teams(db, teams, "injury_updated_at")
     result.injuries_synced_at = injury_ts or ""
-    result.injuries_fresh = not _is_stale(injury_ts, now, PREGAME_INJURY_STALE_MINUTES)
+    _cfg = get_active_config()
+    result.injuries_fresh = not _is_stale(injury_ts, now, _cfg.pregame_injury_stale_minutes)
 
     # --- Odds ---
     games_doc = db.collection("games").document(date_str).get()
     odds_ts = (games_doc.to_dict() or {}).get("odds_synced_at") if games_doc.exists else None
     result.odds_synced_at = str(odds_ts) if odds_ts else ""
-    result.odds_fresh = not _is_stale(str(odds_ts) if odds_ts else None, now, PREGAME_ODDS_STALE_MINUTES)
+    result.odds_fresh = not _is_stale(str(odds_ts) if odds_ts else None, now, _cfg.pregame_odds_stale_minutes)
 
     # --- Trends ---
     trend_ts = _max_timestamp_for_teams(db, teams, "trend_updated_at")
     result.trends_synced_at = trend_ts or ""
-    result.trends_fresh = not _is_stale(trend_ts, now, PREGAME_TRENDS_STALE_MINUTES)
+    result.trends_fresh = not _is_stale(trend_ts, now, _cfg.pregame_trends_stale_minutes)
 
     return result
 
@@ -193,7 +187,7 @@ def refresh_stale_data(
         try:
             from bks_pipeline_core.pipeline.injuries import fetch_and_store_injuries
 
-            api_key = BALL_DONT_LIE_API_KEY.value
+            api_key = get_active_config().stats_api_key.value
             count, _ = fetch_and_store_injuries(db.collection("players"), db, api_key)
             result.injuries_triggered_sync = True
             result.injuries_synced_at = datetime.now(timezone.utc).isoformat()
@@ -248,7 +242,7 @@ def refresh_stale_data(
 
             if matchup_confirmed:
                 result.lineup_fresh = True
-            elif _is_stale(lineup_check_ts, datetime.now(timezone.utc), LINEUP_STALE_MINUTES):
+            elif _is_stale(lineup_check_ts, datetime.now(timezone.utc), get_active_config().lineup_stale_minutes):
                 from pipeline.orchestrator import fetch_and_store_lineup_status
 
                 changes = fetch_and_store_lineup_status(db, date_str)
@@ -281,9 +275,9 @@ def refresh_team_trends(
     from bks_pipeline_core.pipeline.league_state import get_league_state
     from pipeline.trends import fetch_trends
 
-    api_key = BALL_DONT_LIE_API_KEY.value
+    api_key = get_active_config().stats_api_key.value
     if not api_key:
-        raise RuntimeError("BALL_DONT_LIE_API_KEY not set")
+        raise RuntimeError("stats_api_key not set")
 
     now = datetime.now(timezone.utc)
 
@@ -297,7 +291,7 @@ def refresh_team_trends(
             if pid is None:
                 continue
             updated = d.get("trend_updated_at")
-            if not updated or _is_stale(str(updated), now, PREGAME_TRENDS_STALE_MINUTES):
+            if not updated or _is_stale(str(updated), now, get_active_config().pregame_trends_stale_minutes):
                 stale_ids.append(int(pid))
 
     if not stale_ids:
@@ -461,7 +455,7 @@ def should_skip_dedup(
     within :data:`PREGAME_DEDUP_WINDOW_MINUTES` that covers at least one of
     the same teams.
     """
-    cutoff = now - timedelta(minutes=PREGAME_DEDUP_WINDOW_MINUTES)
+    cutoff = now - timedelta(minutes=get_active_config().pregame_dedup_window_minutes)
     game_teams = {home_team, away_team}
 
     docs = db.collection(FRESHNESS_COLLECTION).where("date", "==", date_str).where("status", "in", ["verified", "stale"]).stream()

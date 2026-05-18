@@ -10,12 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from config import (
-    PLAYOFF_COLD_START_ROLLING_WEIGHT,
-    PLAYOFF_ELIMINATION_MULT,
-    PLAYOFF_REST_GAME_MINUTES_THRESHOLD,
-    PLAYOFF_ROTATION_TIERS,
-)
+from bks_pipeline_core.sport_config import get_active_config
 
 
 def playoff_trend_trust(playoff_games: int, player_trust_score: float | None = None) -> float:
@@ -65,6 +60,7 @@ def playoff_cold_start_anchor(
     Returns:
         {anchor: float, playoff_games: int, method: str}
     """
+    _w = get_active_config().playoff_cold_start_rolling_weight
     playoff_games: int = player.get("playoff_games_played") or 0
     rolling_avg: float = player.get(avg_fs_field) or 0.0
     season_fs = compute_season_fantasy_score(player)
@@ -84,7 +80,7 @@ def playoff_cold_start_anchor(
     if playoff_games == 0:
         # Pure cold start: trust recent regular-season form + season baseline
         if season_fs is not None and season_fs > 0 and filtered_rolling > 0:
-            w = PLAYOFF_COLD_START_ROLLING_WEIGHT
+            w = _w
             anchor = w * filtered_rolling + (1.0 - w) * season_fs
             method = "cold_start_blend"
         elif filtered_rolling > 0:
@@ -106,7 +102,7 @@ def playoff_cold_start_anchor(
         playoff_weight = playoff_games / 5.0
         series_component = series_avg if (series_avg is not None and series_games > 0) else rolling_avg
         cold_anchor: float = (
-            (PLAYOFF_COLD_START_ROLLING_WEIGHT * filtered_rolling + (1.0 - PLAYOFF_COLD_START_ROLLING_WEIGHT) * (season_fs or filtered_rolling))
+            (_w * filtered_rolling + (1.0 - _w) * (season_fs or filtered_rolling))
             if season_fs is not None and season_fs > 0
             else filtered_rolling
         )
@@ -135,11 +131,12 @@ def playoff_rotation_multiplier(player: dict[str, Any], playoff_games: int) -> d
         {playoff_rotation_multiplier: float, rotation_tier: str}
     """
     avg_min: float = player.get("avg_minutes") or 0.0
+    _rotation_tiers = get_active_config().playoff_rotation_tiers or []
 
     # Determine raw multiplier from rotation tier
     raw_mult = 1.0
     tier = "bench"
-    for threshold, mult, tier_name in PLAYOFF_ROTATION_TIERS:
+    for threshold, mult, tier_name in _rotation_tiers:
         if avg_min >= threshold:
             raw_mult = mult
             tier = tier_name
@@ -200,7 +197,7 @@ def _filter_rest_games(player: dict[str, Any], rolling_avg: float) -> float:
     check_scores = recent_scores[-3:]
     check_minutes = recent_minutes[-3:]
 
-    filtered_scores = [float(s) for s, m in zip(check_scores, check_minutes) if float(m) >= PLAYOFF_REST_GAME_MINUTES_THRESHOLD]
+    filtered_scores = [float(s) for s, m in zip(check_scores, check_minutes) if float(m) >= get_active_config().playoff_rest_game_minutes_threshold]
 
     if not filtered_scores or len(filtered_scores) == len(check_scores):
         # No rest games found or all filtered out — use original
@@ -223,4 +220,5 @@ def elimination_game_multiplier(player: dict[str, Any], rotation_tier: str | Non
     if not player.get("is_elimination_game"):
         return 1.0
     tier = rotation_tier or "bench"
-    return PLAYOFF_ELIMINATION_MULT.get(tier, 1.0)
+    _elim_mult = get_active_config().playoff_elimination_mult or {}
+    return _elim_mult.get(tier, 1.0)

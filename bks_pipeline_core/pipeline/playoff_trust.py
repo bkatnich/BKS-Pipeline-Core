@@ -26,7 +26,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from config import PLAYOFF_REST_GAME_MINUTES_THRESHOLD
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def _mae_to_trust(mae_pct: float) -> float:
 def _compute_series_aggregates(game_log: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute rest-filtered and all-games aggregates from a series game log.
 
-    Rest games (actual_minutes < PLAYOFF_REST_GAME_MINUTES_THRESHOLD) are
+    Rest games (actual_minutes < get_active_config().playoff_rest_game_minutes_threshold) are
     excluded from averages so they don't drag down projections for stars who
     sat out a blowout. The raw all-games avg is also stored for diagnostics.
     """
@@ -191,7 +191,7 @@ def grade_playoff_trust(
         updated += 1
 
         # --- Series stats doc update ---
-        is_rest = float(act.get("actual_minutes") or 0.0) < PLAYOFF_REST_GAME_MINUTES_THRESHOLD
+        is_rest = float(act.get("actual_minutes") or 0.0) < get_active_config().playoff_rest_game_minutes_threshold
         new_game_entry: dict[str, Any] = {
             "date": date,
             "actual_fp_dk": round(float(actual_fp), 2),

@@ -2,8 +2,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from api.balldontlie import fetch_injuries_page
-from config import INJURY_RETURN_WINDOW_DAYS, MAX_PAGES
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ def compute_return_fields(return_date_str: str | None, today: Any) -> dict[str, 
         if delta >= 0:
             return {
                 "days_since_return": delta,
-                "is_return_game_window": delta <= INJURY_RETURN_WINDOW_DAYS,
+                "is_return_game_window": delta <= get_active_config().injury_return_window_days,
             }
     except ValueError:
         pass
@@ -60,7 +59,10 @@ def fetch_and_store_injuries(
     cursor: int | None = None
     page = 0
 
-    while page < MAX_PAGES:
+    from api.sport_provider import fetch_injuries_page  # sport-specific lazy import
+
+    cfg = get_active_config()
+    while page < cfg.max_pages:
         body = fetch_injuries_page(cursor, api_key, logger)
         if body is None:
             logger.error(

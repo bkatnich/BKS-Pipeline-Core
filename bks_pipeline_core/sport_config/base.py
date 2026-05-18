@@ -71,3 +71,59 @@ class SportConfig:
     # League-average implied team total from over/under lines.
     # Used to normalise Vegas team-total multipliers.
     league_avg_team_total: float
+
+    # Firestore database ID for this sport's named database.
+    firestore_database_id: str
+
+    # External API key (SecretParam) for the sport's stats data provider.
+    stats_api_key: object  # firebase_functions.params.SecretParam
+
+    # Maximum pages to fetch from paginated APIs.
+    max_pages: int = 20
+
+    # Minimum trend_games to qualify for ranked tiers.
+    tier_min_games: int = 3
+
+    # Tier percentile thresholds.
+    tier_elite_pct: float = 0.90
+    tier_good_pct: float = 0.75
+    tier_solid_pct: float = 0.50
+
+    # Game-appearances per team used to compute pts allowed per position.
+    defense_game_window: int = 15
+
+    # Days after return_date within which is_return_game_window = True.
+    injury_return_window_days: int = 14
+
+    # Minutes below which a playoff game counts as a rest game.
+    playoff_rest_game_minutes_threshold: int = 15
+
+    # Playoff cold-start rolling weight (rolling-5g avg vs season avg).
+    playoff_cold_start_rolling_weight: float = 0.65
+
+    # Playoff elimination multipliers by series result.
+    playoff_elimination_mult: dict[str, float] | None = None
+
+    # Playoff rotation tier bands: (min_pct, max_pct, label).
+    playoff_rotation_tiers: list[tuple[float, float, str]] | None = None
+
+    # Minimum prop_actuals to fit Platt scaling per stat type.
+    platt_min_samples: int = 50
+
+    # Rolling window (days) for Platt training data.
+    platt_window_days: int = 30
+
+    # Per-stat Platt window overrides: {stat_key: days}.
+    platt_window_days_by_stat: dict[str, int] | None = None
+
+    # Minimum edge (proportion) to flag a prop as actionable.
+    prop_edge_display_threshold: float = 0.04
+
+    # Pregame freshness stale thresholds (minutes).
+    pregame_injury_stale_minutes: int = 30
+    pregame_odds_stale_minutes: int = 60
+    pregame_trends_stale_minutes: int = 120
+    pregame_dedup_window_minutes: int = 10
+
+    # Minutes before re-polling lineups.
+    lineup_stale_minutes: int = 10

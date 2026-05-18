@@ -12,10 +12,11 @@ from typing import Any
 
 from google.cloud.firestore_v1.base_client import BaseClient
 
-from config import PLATT_MIN_SAMPLES, PLATT_WINDOW_DAYS, PLATT_WINDOW_DAYS_BY_STAT
 from bks_pipeline_core.pipeline.platt import brier_score, fit_platt
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
+
 
 _MAX_HISTORY = 30  # keep last 30 daily fits
 
@@ -57,7 +58,7 @@ def store_platt_coefficients(
     history.append(
         {
             "timestamp": now_iso,
-            "window_days": PLATT_WINDOW_DAYS,
+            "window_days": get_active_config().platt_window_days,
             "coefficients": coefficients,
         }
     )
@@ -78,7 +79,7 @@ def store_platt_coefficients(
 
 def refit_platt_from_actuals(
     db: BaseClient,
-    window_days: int = PLATT_WINDOW_DAYS,
+    window_days: int | None = None,
 ) -> dict[str, dict[str, Any]] | None:
     """Refit Platt coefficients from recent prop_actuals.
 
@@ -92,7 +93,11 @@ def refit_platt_from_actuals(
     # Scan the maximum window needed across all stats to avoid multiple passes.
     from datetime import timedelta
 
-    max_window = max([window_days] + list(PLATT_WINDOW_DAYS_BY_STAT.values()))
+    _cfg = get_active_config()
+    if window_days is None:
+        window_days = _cfg.platt_window_days
+    _platt_window_by_stat = _cfg.platt_window_days_by_stat or {}
+    max_window = max([window_days] + list(_platt_window_by_stat.values()))
     today = datetime.now(timezone.utc).date()
     dates_to_check = [(today - timedelta(days=d)).isoformat() for d in range(1, max_window + 1)]
 
@@ -117,10 +122,10 @@ def refit_platt_from_actuals(
     # Fit per stat type, applying per-stat window cutoff.
     coefficients: dict[str, dict[str, Any]] = {}
     for stat, raw_pairs in pairs_by_stat.items():
-        stat_window = PLATT_WINDOW_DAYS_BY_STAT.get(stat, window_days)
+        stat_window = _platt_window_by_stat.get(stat, window_days)
         pairs = [(p, o) for day_offset, p, o in raw_pairs if day_offset <= stat_window]
-        if len(pairs) < PLATT_MIN_SAMPLES:
-            logger.info("platt refit: %s has %d samples in %d-day window (need %d), skipping", stat, len(pairs), stat_window, PLATT_MIN_SAMPLES)
+        if len(pairs) < _cfg.platt_min_samples:
+            logger.info("platt refit: %s has %d samples in %d-day window (need %d), skipping", stat, len(pairs), stat_window, _cfg.platt_min_samples)
             continue
 
         result = fit_platt(pairs)
@@ -140,7 +145,7 @@ def refit_platt_from_actuals(
     # Also compute uncalibrated Brier for comparison (using same window as fit).
     for stat, raw_pairs in pairs_by_stat.items():
         if stat in coefficients:
-            stat_window = PLATT_WINDOW_DAYS_BY_STAT.get(stat, window_days)
+            stat_window = _platt_window_by_stat.get(stat, window_days)
             pairs = [(p, o) for day_offset, p, o in raw_pairs if day_offset <= stat_window]
             uncal_brier = brier_score(
                 [p for p, _ in pairs],

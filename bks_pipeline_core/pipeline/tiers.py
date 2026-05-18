@@ -2,8 +2,8 @@ import bisect
 import logging
 from typing import Any
 
-from config import TIER_ELITE_PCT, TIER_GOOD_PCT, TIER_MIN_GAMES, TIER_SOLID_PCT
 from bks_pipeline_core.pipeline.platforms import PLATFORMS
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,12 @@ def assign_percentile_tiers(
     backwards-compatible) and "player_tier_dk". All other platforms write to
     "player_tier_<platform>".
     """
+
+    _cfg = get_active_config()
+    TIER_MIN_GAMES = _cfg.tier_min_games
+    TIER_ELITE_PCT = _cfg.tier_elite_pct
+    TIER_GOOD_PCT = _cfg.tier_good_pct
+    TIER_SOLID_PCT = _cfg.tier_solid_pct
 
     # ------------------------------------------------------------------
     # Pre-compute advanced metric percentile inputs (platform-agnostic)

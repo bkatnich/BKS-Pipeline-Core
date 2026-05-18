@@ -21,8 +21,8 @@ from firebase_functions import https_fn
 from firebase_functions.params import SecretParam
 
 from bks_pipeline_core.auth import require_auth
-from config import FIRESTORE_DATABASE_ID
 from bks_pipeline_core.models.user import TIER_BASIC, TIER_PREMIUM, TIER_PRO, UserDoc
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ GOOGLE_PRODUCT_TIERS: dict[str, str] = {
 
 
 def _get_db() -> Any:
-    return firestore.client(database_id=FIRESTORE_DATABASE_ID)
+    return firestore.client(database_id=get_active_config().firestore_database_id)
 
 
 def _get_user_doc(db: Any, uid: str) -> UserDoc:
