@@ -73,10 +73,10 @@ class SportConfig:
     league_avg_team_total: float
 
     # Firestore database ID for this sport's named database.
-    firestore_database_id: str
+    firestore_database_id: str = ""
 
     # External API key (SecretParam) for the sport's stats data provider.
-    stats_api_key: object  # firebase_functions.params.SecretParam
+    stats_api_key: object = None  # firebase_functions.params.SecretParam
 
     # Maximum pages to fetch from paginated APIs.
     max_pages: int = 20
