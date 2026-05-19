@@ -990,7 +990,7 @@ def generate_accuracy_report_html(
         """)
 
     # --- Footer ---
-    sections.append("""
+    sections.append(f"""
     <div style="background:#f5f5f5;padding:12px 24px;border-radius:0 0 8px 8px;
                 font-size:11px;color:#999;text-align:center;">
         BKS {get_active_config().sport_display_name} Continuous Learning System &middot; Auto-generated report
