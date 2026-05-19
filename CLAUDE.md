@@ -38,6 +38,13 @@ pytest tests/path/to/test_file.py::test_function_name
 
 - **`utils/http_retry.py`** — HTTP client with exponential backoff + jitter. Retries on 429, 5xx, and connection errors.
 
+### Related Repos (local)
+
+- **Basketball server**: `/Users/Britton/Documents/Repositories/BlackKatt/Basketball/BKS-Basketball-Server-Firebase`
+- **Baseball server**: `/Users/Britton/Documents/Repositories/BlackKatt/Baseball/BKS-Baseball-Server-Firebase`
+
+These are the Firebase/Cloud Functions backends that consume this package.
+
 ### Key Patterns
 
 - **Sport abstraction**: All sport-specific constants live in `SportConfig`; pipeline logic stays generic and reads from `get_active_config()`.
