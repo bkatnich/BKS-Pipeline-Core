@@ -183,3 +183,12 @@ class SportConfig:
 
     # Minutes before re-polling lineups.
     lineup_stale_minutes: int = 10
+
+    # Per-stat accuracy field mapping for backtesting.
+    # Each entry: (predicted_field, actual_field, display_name)
+    # predicted_field: key on the prediction snapshot record (e.g. "projected_pts")
+    # actual_field: key on the joined record after actuals are prefixed with "actual_"
+    #               (e.g. "actual_actual_pts" — actuals doc has "actual_pts", join prefixes again)
+    # display_name: label shown in the accuracy report table (e.g. "Hits", "HR")
+    # None = use the sport-agnostic default (basketball alias names).
+    stat_fields: list[tuple[str, str, str]] | None = None

@@ -463,16 +463,20 @@ _STAT_FIELDS: list[tuple[str, str, str]] = [
 def compute_stat_accuracy(joined: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Compute per-stat prediction accuracy (MAE, bias, Pearson r).
 
-    Compares projected_pts/reb/ast/stl/blk/min (stored in snapshot at prediction
-    time) against actual_pts/reb/ast/stl/blk/minutes from actuals.
+    Field mapping is taken from the active SportConfig's stat_fields when set,
+    falling back to _STAT_FIELDS (basketball defaults) otherwise.
 
-    Stats are platform-agnostic — the same projected value applies to both DK
-    and FD since it's a raw stat count, not a fantasy point value.
-
-    Returns a dict keyed by stat name with mae, bias, r, and sample_size.
+    Returns a dict keyed by display_name with mae, bias, r, and sample_size.
     """
+    from bks_pipeline_core.sport_config import get_active_config
+    try:
+        cfg_fields = get_active_config().stat_fields
+    except RuntimeError:
+        cfg_fields = None
+    fields = cfg_fields if cfg_fields is not None else _STAT_FIELDS
+
     result: dict[str, dict[str, Any]] = {}
-    for pred_field, act_field, label in _STAT_FIELDS:
+    for pred_field, act_field, label in fields:
         pairs: list[tuple[float, float]] = []
         for r in joined:
             pred_val = r.get(pred_field)
