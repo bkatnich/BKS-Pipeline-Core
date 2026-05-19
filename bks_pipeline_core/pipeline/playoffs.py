@@ -3,22 +3,36 @@
 Collection path: playoffs/{year}/series/{series_id}
 
 Series IDs are deterministic: {conference}_{round}_{higher_seed}_v_{lower_seed}
-Example: "west_r1_1_v_8" for the Western Conference first-round 1-seed vs 8-seed.
+Example: "west_r1_1_v_8" for a Western Conference first-round 1-seed vs 8-seed.
 
-Finals series use conference="nba": "nba_r4_east_v_west"
+The championship series uses the championship_conference_key from BracketConfig,
+e.g. "nba_r4_east_v_west" for NBA.
+
+All bracket-structure constants (conferences, seeding, round names, series length,
+home-court pattern) are provided by SportConfig.playoff_bracket (a BracketConfig).
+Functions that require bracket config will raise RuntimeError if playoff_bracket is None.
+Read-only Firestore functions (get_all_series, get_series, update_series) are safe
+to call regardless of whether playoff_bracket is configured.
 """
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from bks_pipeline_core.sport_config import get_active_config
+
+if TYPE_CHECKING:
+    from bks_pipeline_core.sport_config.base import BracketConfig
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    # Deprecated module-level constants — use get_active_config().playoff_bracket instead.
     "CONFERENCES",
     "ROUND_NAMES",
     "SERIES_WIN_THRESHOLD",
     "HOME_COURT_PATTERN",
+    # Public API
     "series_id",
     "build_series_doc",
     "record_game_result",
@@ -33,11 +47,15 @@ __all__ = [
     "_winner_seed",
 ]
 
-# NBA playoff bracket: first-round matchups by seed
-_FIRST_ROUND_MATCHUPS = [(1, 8), (2, 7), (3, 6), (4, 5)]
+# ---------------------------------------------------------------------------
+# Deprecated module-level constants (NBA literals kept for backward compat)
+# Use get_active_config().playoff_bracket.<field> in new code.
+# ---------------------------------------------------------------------------
 
+# Deprecated: use get_active_config().playoff_bracket.conferences
 CONFERENCES = ("east", "west")
 
+# Deprecated: use get_active_config().playoff_bracket.round_names
 ROUND_NAMES = {
     1: "First Round",
     2: "Conference Semifinals",
@@ -45,19 +63,37 @@ ROUND_NAMES = {
     4: "NBA Finals",
 }
 
-SERIES_WIN_THRESHOLD = 4  # best-of-7
+# Deprecated: use get_active_config().playoff_bracket.series_win_threshold
+SERIES_WIN_THRESHOLD = 4
 
-# Home-court pattern for 2-2-1-1-1 format (standard NBA)
-# True = higher seed has home court for that game number
-# Keys must be strings — Firestore rejects integer dict keys (FieldPath validation)
+# Deprecated: use get_active_config().playoff_bracket.home_court_pattern
 HOME_COURT_PATTERN = {"1": True, "2": True, "3": False, "4": False, "5": True, "6": False, "7": True}
 
+
+# ---------------------------------------------------------------------------
+# Internal helper
+# ---------------------------------------------------------------------------
+
+def _bracket() -> "BracketConfig":
+    """Return the active sport's BracketConfig, raising clearly if absent."""
+    bc = get_active_config().playoff_bracket
+    if bc is None:
+        raise RuntimeError(
+            f"SportConfig.playoff_bracket is not configured for sport "
+            f"'{get_active_config().sport_collection_key}'. "
+            "Set playoff_bracket on SportConfig to use bracket functions."
+        )
+    return bc
+
+
+# ---------------------------------------------------------------------------
+# Series document construction
+# ---------------------------------------------------------------------------
 
 def series_id(conference: str, round_number: int, higher_seed: int | str, lower_seed: int | str) -> str:
     """Generate a deterministic series ID.
 
-    For rounds 1-3: {conference}_r{round}_{higher_seed}_v_{lower_seed}
-    For finals (round 4): nba_r4_{east_team}_v_{west_team}
+    Format: {conference}_r{round}_{higher_seed}_v_{lower_seed}
     """
     return f"{conference}_r{round_number}_{higher_seed}_v_{lower_seed}"
 
@@ -74,21 +110,22 @@ def build_series_doc(
     """Build a new series document ready for Firestore.
 
     Args:
-        conference: "east", "west", or "nba" (finals)
-        round_number: 1-4
+        conference: e.g. "east", "west", or the championship_conference_key
+        round_number: 1-based round number
         higher_seed_team: team abbreviation of the higher seed (e.g., "BOS")
         lower_seed_team: team abbreviation of the lower seed (e.g., "MIA")
-        higher_seed: seed number of the higher seed (e.g., 1)
-        lower_seed: seed number of the lower seed (e.g., 8)
+        higher_seed: seed number or conference name for championship
+        lower_seed: seed number or conference name for championship
         year: playoff year (e.g., 2026)
     """
+    bc = _bracket()
     sid = series_id(conference, round_number, higher_seed, lower_seed)
     return {
         "series_id": sid,
         "year": year,
         "conference": conference,
         "round_number": round_number,
-        "round_name": ROUND_NAMES.get(round_number, f"Round {round_number}"),
+        "round_name": bc.round_names.get(round_number, f"Round {round_number}"),
         "higher_seed_team": higher_seed_team,
         "lower_seed_team": lower_seed_team,
         "higher_seed": higher_seed,
@@ -100,8 +137,8 @@ def build_series_doc(
         "loser": None,
         "games_played": 0,
         "elimination_game_next": False,
-        "home_court_pattern": HOME_COURT_PATTERN,
-        "game_results": [],  # list of {game_number, date, winner_team, score}
+        "home_court_pattern": bc.home_court_pattern,
+        "game_results": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -119,8 +156,9 @@ def record_game_result(
 
     Returns the updated series document (caller is responsible for writing to Firestore).
     Does NOT mutate the input dict — returns a new copy.
-    game_id is the stable BDL game identifier, stored for idempotency across runs.
+    game_id is a stable game identifier stored for idempotency across runs.
     """
+    threshold = _bracket().series_win_threshold
     doc = {**series_doc, "game_results": list(series_doc.get("game_results", []))}
 
     result = {
@@ -143,8 +181,7 @@ def record_game_result(
     # Safety guard: wins must not exceed games_played (catches double-recording)
     total_wins = doc["wins_higher_seed"] + doc["wins_lower_seed"]
     if total_wins > doc["games_played"]:
-        import logging as _logging
-        _logging.getLogger(__name__).error(
+        logger.error(
             "record_game_result: wins (%d) exceed games_played (%d) for %s — reverting to active",
             total_wins,
             doc["games_played"],
@@ -153,24 +190,29 @@ def record_game_result(
         doc["status"] = "active"
         return doc
 
-    # Check for series completion
-    if doc["wins_higher_seed"] >= SERIES_WIN_THRESHOLD:
+    if doc["wins_higher_seed"] >= threshold:
         doc["status"] = "completed"
         doc["winner"] = doc["higher_seed_team"]
         doc["loser"] = doc["lower_seed_team"]
         doc["elimination_game_next"] = False
-    elif doc["wins_lower_seed"] >= SERIES_WIN_THRESHOLD:
+    elif doc["wins_lower_seed"] >= threshold:
         doc["status"] = "completed"
         doc["winner"] = doc["lower_seed_team"]
         doc["loser"] = doc["higher_seed_team"]
         doc["elimination_game_next"] = False
     else:
-        # Check if next game is an elimination game for either team
-        doc["elimination_game_next"] = doc["wins_higher_seed"] == SERIES_WIN_THRESHOLD - 1 or doc["wins_lower_seed"] == SERIES_WIN_THRESHOLD - 1
+        doc["elimination_game_next"] = (
+            doc["wins_higher_seed"] == threshold - 1
+            or doc["wins_lower_seed"] == threshold - 1
+        )
 
     doc["updated_at"] = datetime.now(timezone.utc).isoformat()
     return doc
 
+
+# ---------------------------------------------------------------------------
+# Bracket generation
+# ---------------------------------------------------------------------------
 
 def generate_first_round_matchups(
     seedings: dict[str, list[dict[str, Any]]],
@@ -179,26 +221,26 @@ def generate_first_round_matchups(
     """Generate first-round series documents from conference seedings.
 
     Args:
-        seedings: {"east": [...], "west": [...]} where each list contains
-                  dicts with "team" (abbreviation) and "seed" (1-8), sorted by seed.
+        seedings: {conference_key: [...]} where each list contains dicts with
+                  "team" (abbreviation) and "seed" (int), sorted by seed.
         year: playoff year
 
-    Returns list of 8 series documents (4 per conference).
+    Returns list of series documents (len = conferences × first_round_matchups).
+    Requires SportConfig.playoff_bracket to be configured.
     """
+    bc = _bracket()
     series_docs = []
-    for conference in CONFERENCES:
+    for conference in bc.conferences:
         teams = seedings.get(conference, [])
         seed_map = {t["seed"]: t["team"] for t in teams}
 
-        for high, low in _FIRST_ROUND_MATCHUPS:
+        for high, low in bc.first_round_matchups:
             high_team = seed_map.get(high)
             low_team = seed_map.get(low)
             if not high_team or not low_team:
                 logger.warning(
                     "Missing seed %d or %d for %s conference — skipping matchup",
-                    high,
-                    low,
-                    conference,
+                    high, low, conference,
                 )
                 continue
 
@@ -217,26 +259,13 @@ def generate_first_round_matchups(
 
 
 # ---------------------------------------------------------------------------
-# Bracket progression — determines next-round matchups
+# Bracket progression
 # ---------------------------------------------------------------------------
-
-# NBA bracket tree: maps (round, matchup_index) → feeder matchup indices from the previous round.
-# Round 1 matchup indices (per conference): 0=(1v8), 1=(4v5), 2=(3v6), 3=(2v7)
-# Round 2: winner of matchup 0 vs winner of matchup 1; winner of matchup 2 vs winner of matchup 3
-# Round 3: winner of R2-matchup-0 vs winner of R2-matchup-1 (conference finals)
-_R1_MATCHUPS = {0: (1, 8), 1: (4, 5), 2: (3, 6), 3: (2, 7)}
-
-# R2 feeder: R2 matchup index → (R1 matchup index A, R1 matchup index B)
-_R2_FEEDERS = {0: (0, 1), 1: (2, 3)}
-
-# R3 (conf finals): single matchup fed by R2 matchup 0 and R2 matchup 1
-_R3_FEEDERS = {0: (0, 1)}
-
 
 def _r1_matchup_index(higher_seed: int, lower_seed: int) -> int | None:
     """Return the R1 matchup index for a seed pairing, or None if not found."""
     pair = (higher_seed, lower_seed)
-    for idx, seeds in _R1_MATCHUPS.items():
+    for idx, seeds in _bracket().r1_matchups_index.items():
         if seeds == pair:
             return idx
     return None
@@ -250,30 +279,26 @@ def determine_next_round_series(
 
     Returns a new series doc if both feeder series are complete, otherwise None.
     Pure function — does not touch Firestore.
-
-    Logic:
-      - Round 1 completion → check if paired R1 series is also done → create R2 series
-      - Round 2 completion → check if paired R2 series is also done → create R3 (conf finals)
-      - Round 3 completion → check if other conference finals is done → create R4 (NBA Finals)
-      - Round 4 completion → no next round (champion determined)
+    Requires SportConfig.playoff_bracket to be configured.
     """
     if completed_series.get("status") != "completed":
         return None
 
+    bc = _bracket()
     round_num = completed_series["round_number"]
     conference = completed_series["conference"]
     year = completed_series["year"]
     winner = completed_series["winner"]
 
-    if round_num == 4:
-        # NBA Finals complete — no next round
-        return None
+    if round_num >= bc.total_rounds:
+        return None  # Championship complete — no next round
 
-    # Build lookup of completed series for this conference and round
-    conf_series = [s for s in all_series_for_year if s.get("conference") == conference and s.get("round_number") == round_num]
+    conf_series = [
+        s for s in all_series_for_year
+        if s.get("conference") == conference and s.get("round_number") == round_num
+    ]
 
     if round_num == 1:
-        # Find which R1 matchup index this series corresponds to
         my_idx = _r1_matchup_index(completed_series["higher_seed"], completed_series["lower_seed"])
         if my_idx is None:
             logger.warning(
@@ -282,9 +307,8 @@ def determine_next_round_series(
             )
             return None
 
-        # Find the paired R1 series via R2 feeders
         paired_idx = None
-        for r2_idx, (a, b) in _R2_FEEDERS.items():
+        for r2_idx, (a, b) in bc.r2_feeders.items():
             if my_idx == a:
                 paired_idx = b
                 break
@@ -295,45 +319,53 @@ def determine_next_round_series(
         if paired_idx is None:
             return None
 
-        paired_seeds = _R1_MATCHUPS[paired_idx]
+        paired_seeds = bc.r1_matchups_index[paired_idx]
         paired_series = _find_series(conf_series, paired_seeds[0], paired_seeds[1])
 
         if paired_series is None or paired_series.get("status") != "completed":
-            return None  # Paired series not done yet
+            return None
 
-        # Both feeders complete — create R2 series
         return _create_next_round_from_feeders(completed_series, paired_series, conference, 2, year)
 
     elif round_num == 2:
-        # Find paired R2 series in same conference
-        other_r2 = [s for s in conf_series if s.get("series_id") != completed_series.get("series_id") and s.get("status") == "completed"]
+        other_r2 = [
+            s for s in conf_series
+            if s.get("series_id") != completed_series.get("series_id")
+            and s.get("status") == "completed"
+        ]
         if not other_r2:
-            return None  # Other R2 not done yet
+            return None
 
         return _create_next_round_from_feeders(completed_series, other_r2[0], conference, 3, year)
 
-    elif round_num == 3:
-        # Conference finals done — check if other conference finals is done
-        other_conf = "west" if conference == "east" else "east"
+    elif round_num == bc.total_rounds - 1:
+        # Conference finals done — check if the other conference finals is done
+        other_conf = next((c for c in bc.conferences if c != conference), None)
+        if other_conf is None:
+            return None
+
         other_conf_finals = [
-            s for s in all_series_for_year if s.get("conference") == other_conf and s.get("round_number") == 3 and s.get("status") == "completed"
+            s for s in all_series_for_year
+            if s.get("conference") == other_conf
+            and s.get("round_number") == bc.total_rounds - 1
+            and s.get("status") == "completed"
         ]
         if not other_conf_finals:
-            return None  # Other conference finals not done yet
+            return None
 
         other_winner = other_conf_finals[0]["winner"]
 
-        # NBA Finals: use conference names as seeds for ID
-        east_team = winner if conference == "east" else other_winner
-        west_team = winner if conference == "west" else other_winner
+        # Championship: use conference names as seeds in the series ID
+        first_conf_team = winner if conference == bc.conferences[0] else other_winner
+        second_conf_team = winner if conference == bc.conferences[1] else other_winner
 
         return build_series_doc(
-            conference="nba",
-            round_number=4,
-            higher_seed_team=east_team,
-            lower_seed_team=west_team,
-            higher_seed="east",
-            lower_seed="west",
+            conference=bc.championship_conference_key,
+            round_number=bc.total_rounds,
+            higher_seed_team=first_conf_team,
+            lower_seed_team=second_conf_team,
+            higher_seed=bc.conferences[0],
+            lower_seed=bc.conferences[1],
             year=year,
         )
 
@@ -355,14 +387,10 @@ def _create_next_round_from_feeders(
     next_round: int,
     year: int,
 ) -> dict[str, Any]:
-    """Create the next-round series from two completed feeder series.
-
-    The winner with the better (lower number) original seed gets higher_seed position.
-    """
+    """Create the next-round series from two completed feeder series."""
     winner_a = feeder_a["winner"]
     winner_b = feeder_b["winner"]
 
-    # Determine original seeds for seeding the next round
     seed_a = _winner_seed(feeder_a)
     seed_b = _winner_seed(feeder_b)
 
@@ -392,15 +420,15 @@ def _winner_seed(series_doc: dict[str, Any]) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Bracket progression — Firestore orchestration
+# Firestore I/O — safe to call without playoff_bracket configured
 # ---------------------------------------------------------------------------
-
 
 def advance_bracket(db: Any, year: int, completed_series: dict[str, Any]) -> dict[str, Any] | None:
     """Check if a completed series triggers bracket advancement and write the new series.
 
     Returns the new series doc if created, otherwise None.
     Idempotent: if the next-round series already exists, returns None without overwriting.
+    Requires SportConfig.playoff_bracket to be configured.
     """
     all_series = get_all_series(db, year)
     next_series = determine_next_round_series(completed_series, all_series)
@@ -408,7 +436,6 @@ def advance_bracket(db: Any, year: int, completed_series: dict[str, Any]) -> dic
     if next_series is None:
         return None
 
-    # Idempotency check: don't overwrite an existing series
     existing = get_series(db, year, next_series["series_id"])
     if existing is not None:
         logger.info(
@@ -435,7 +462,6 @@ def write_series_to_firestore(db: Any, year: int, series_docs: list[dict[str, An
     written = 0
     series_ref = db.collection("playoffs").document(str(year)).collection("series")
 
-    # Batch in chunks of 500 (Firestore batch limit)
     for chunk_start in range(0, len(series_docs), 500):
         chunk = series_docs[chunk_start : chunk_start + 500]
         batch = db.batch()

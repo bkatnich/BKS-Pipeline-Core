@@ -1,6 +1,6 @@
-from bks_pipeline_core.sport_config.base import SportConfig
+from bks_pipeline_core.sport_config.base import BracketConfig, SportConfig
 
-__all__ = ["SportConfig", "get_active_config", "set_active_config"]
+__all__ = ["BracketConfig", "SportConfig", "get_active_config", "set_active_config"]
 
 _active_config: SportConfig | None = None
 

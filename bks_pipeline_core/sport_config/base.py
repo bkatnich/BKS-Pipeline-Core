@@ -28,6 +28,42 @@ class ScoringWeights:
 
 
 @dataclass(frozen=True)
+class BracketConfig:
+    """Playoff bracket structure for a sport. Set on SportConfig.playoff_bracket."""
+
+    # Conference/group identifiers — first segment of series_id.
+    # e.g. ("east", "west") for NBA; ("al", "nl") for MLB.
+    conferences: tuple[str, ...]
+
+    # First-round seed pairings per conference: ((high, low), ...)
+    # e.g. ((1,8),(2,7),(3,6),(4,5)) for NBA.
+    first_round_matchups: tuple[tuple[int, int], ...]
+
+    # Round number → human-readable name.
+    round_names: dict[int, str]
+
+    # Wins required to take a series. Best-of-7 → 4, best-of-5 → 3.
+    series_win_threshold: int
+
+    # Home-court pattern keyed by string game number ("1"…"7").
+    # True = higher seed is at home. String keys required (Firestore rejects int keys).
+    home_court_pattern: dict[str, bool]
+
+    # Total playoff rounds including the championship.
+    total_rounds: int
+
+    # Conference key used in the championship series_id (e.g. "nba", "mlb").
+    championship_conference_key: str
+
+    # R1 matchup index → (higher_seed, lower_seed).
+    # Index order determines bracket pairing: index 0 meets index 1 in R2, etc.
+    r1_matchups_index: dict[int, tuple[int, int]]
+
+    # R2 matchup index → (R1 index A, R1 index B) that feed it.
+    r2_feeders: dict[int, tuple[int, int]]
+
+
+@dataclass(frozen=True)
 class SportConfig:
     """Sport-specific constants consumed by the pipeline layer.
 
@@ -118,6 +154,11 @@ class SportConfig:
 
     # Playoff rotation tier bands: (min_pct, max_pct, label).
     playoff_rotation_tiers: list[tuple[float, float, str]] | None = None
+
+    # Playoff bracket structure. None = sport has no playoffs or not yet configured.
+    # When None, bracket functions (generate_first_round_matchups, advance_bracket, etc.)
+    # will raise RuntimeError. Read-only functions (get_all_series, get_series) are safe.
+    playoff_bracket: BracketConfig | None = None
 
     # Minimum prop_actuals to fit Platt scaling per stat type.
     platt_min_samples: int = 50
