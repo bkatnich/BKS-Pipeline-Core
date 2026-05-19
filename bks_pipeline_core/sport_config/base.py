@@ -25,6 +25,9 @@ class ScoringWeights:
     pf: float = 0.0
     dd_bonus: float = 0.0
     td_bonus: float = 0.0
+    # Optional field name override for the primary fantasy points column.
+    # Used when a sport provider stores FD points under a different key (e.g. "pts_fd").
+    pts_field: str = "pts"
 
 
 @dataclass(frozen=True)
