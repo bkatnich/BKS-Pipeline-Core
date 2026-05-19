@@ -64,6 +64,18 @@ class SportConfig:
     # Stat keys used in per-game projection (subset of box-score stats)
     projected_stat_keys: list[str]
 
+    # Human-readable sport name used in UI strings, email subjects, and report titles.
+    # e.g. "Basketball", "Baseball"
+    sport_display_name: str
+
+    # Firestore sub-collection key for sport-scoped documents.
+    # e.g. "nba", "mlb"
+    sport_collection_key: str
+
+    # Apple App Store bundle ID prefix for IAP product ID construction.
+    # e.g. "com.blackkatt.bksbasketball", "com.blackkatt.bksbaseball"
+    apple_bundle_id: str
+
     # The Odds API sport slug — e.g. "basketball_nba"
     # Used to document which sport slug the api/ provider targets.
     odds_api_sport_slug: str

@@ -27,8 +27,8 @@ from bks_pipeline_core.sport_config import get_active_config
 __all__ = [
     "APPLE_SHARED_SECRET",
     "GOOGLE_PLAY_SERVICE_ACCOUNT",
-    "APPLE_PRODUCT_TIERS",
     "GOOGLE_PRODUCT_TIERS",
+    "get_apple_product_tiers",
     "validate_apple_receipt",
     "validate_google_receipt",
     "apple_server_notification",
@@ -48,17 +48,7 @@ _Request = https_fn.Request  # type: ignore[attr-defined]
 APPLE_SHARED_SECRET = SecretParam("APPLE_SHARED_SECRET")
 GOOGLE_PLAY_SERVICE_ACCOUNT = SecretParam("GOOGLE_PLAY_SERVICE_ACCOUNT")
 
-# Product ID → tier mapping
-# These must match the product IDs configured in App Store Connect / Play Console
-APPLE_PRODUCT_TIERS: dict[str, str] = {
-    "com.blackkatt.bksbasketball.basic_monthly": TIER_BASIC,
-    "com.blackkatt.bksbasketball.basic_annual": TIER_BASIC,
-    "com.blackkatt.bksbasketball.pro_monthly": TIER_PRO,
-    "com.blackkatt.bksbasketball.pro_annual": TIER_PRO,
-    "com.blackkatt.bksbasketball.premium_monthly": TIER_PREMIUM,
-    "com.blackkatt.bksbasketball.premium_annual": TIER_PREMIUM,
-}
-
+# Google Play product IDs are sport-agnostic (no bundle prefix required)
 GOOGLE_PRODUCT_TIERS: dict[str, str] = {
     "basic_monthly": TIER_BASIC,
     "basic_annual": TIER_BASIC,
@@ -67,6 +57,23 @@ GOOGLE_PRODUCT_TIERS: dict[str, str] = {
     "premium_monthly": TIER_PREMIUM,
     "premium_annual": TIER_PREMIUM,
 }
+
+
+def get_apple_product_tiers() -> dict[str, str]:
+    """Build the Apple product ID → tier map from the active sport config.
+
+    Apple product IDs are prefixed with the app's bundle ID, which differs
+    per sport. Call this at request time rather than module load time.
+    """
+    prefix = get_active_config().apple_bundle_id
+    return {
+        f"{prefix}.basic_monthly": TIER_BASIC,
+        f"{prefix}.basic_annual": TIER_BASIC,
+        f"{prefix}.pro_monthly": TIER_PRO,
+        f"{prefix}.pro_annual": TIER_PRO,
+        f"{prefix}.premium_monthly": TIER_PREMIUM,
+        f"{prefix}.premium_annual": TIER_PREMIUM,
+    }
 
 
 def _get_db() -> Any:
@@ -160,7 +167,7 @@ def validate_apple_receipt(req: Any) -> Any:
         )
 
     # Map product to tier
-    tier = APPLE_PRODUCT_TIERS.get(product_id)
+    tier = get_apple_product_tiers().get(product_id)
     if not tier:
         logger.warning("Apple validation: unrecognized product_id=%s", product_id)
         return _Response(

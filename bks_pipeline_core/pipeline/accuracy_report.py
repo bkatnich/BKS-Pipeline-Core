@@ -7,6 +7,8 @@ and returns an HTML string. No I/O.
 from html import escape
 from typing import Any
 
+from bks_pipeline_core.sport_config import get_active_config
+
 _TIER_ORDER = ["elite_opp", "good_opp", "solid_opp", "low_opp"]
 
 _SIGNAL_DISPLAY_NAMES: dict[str, str] = {
@@ -479,7 +481,7 @@ def generate_accuracy_report_html(
     # --- Header ---
     sections.append(f"""
     <div style="background:#1a1a2e;color:#fff;padding:20px 24px;border-radius:8px 8px 0 0;">
-        <h1 style="margin:0;font-size:22px;">BKS Basketball Accuracy Report</h1>
+        <h1 style="margin:0;font-size:22px;">BKS {get_active_config().sport_display_name} Accuracy Report</h1>
         <p style="margin:4px 0 0;color:#aab;font-size:14px;">{date} &middot; {sample_size} players analyzed</p>
     </div>
     """)
@@ -991,7 +993,7 @@ def generate_accuracy_report_html(
     sections.append("""
     <div style="background:#f5f5f5;padding:12px 24px;border-radius:0 0 8px 8px;
                 font-size:11px;color:#999;text-align:center;">
-        BKS Basketball Continuous Learning System &middot; Auto-generated report
+        BKS {get_active_config().sport_display_name} Continuous Learning System &middot; Auto-generated report
     </div>
     """)
 

@@ -22,6 +22,7 @@ from bks_pipeline_core.pipeline.backtesting import (
     join_predictions_actuals,
 )
 from bks_pipeline_core.pipeline.prediction_store import get_prediction_run
+from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +167,7 @@ def run_comparison(
             {
                 "to": email_to,
                 "message": {
-                    "subject": (f"BKS Basketball Comparison — {actuals_date} [{version_label}]"),
+                    "subject": (f"BKS {get_active_config().sport_display_name} Comparison — {actuals_date} [{version_label}]"),
                     "html": html,
                 },
                 "created_at": now_et.isoformat(),

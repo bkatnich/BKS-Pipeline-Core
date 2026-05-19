@@ -28,7 +28,7 @@ _ROSTER_FIELDS: set[str] = {
     "team",
     "position",
     "headshot_url",
-    "nba_person_id",
+    "sport_person_id",
 }
 
 # All fields — available to every paid tier (Trial and above)

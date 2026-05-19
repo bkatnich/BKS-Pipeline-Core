@@ -105,7 +105,7 @@ def refit_platt_from_actuals(
     pairs_by_stat: dict[str, list[tuple[int, float, bool]]] = {}
 
     for day_offset, date_str in enumerate(dates_to_check, start=1):
-        sport_ref = db.collection("prop_actuals").document(date_str).collection("nba")
+        sport_ref = db.collection("prop_actuals").document(date_str).collection(get_active_config().sport_collection_key)
         for player_doc in sport_ref.stream():
             player_data: dict[str, Any] = player_doc.to_dict() or {}
             lines: dict[str, Any] = player_data.get("lines", {})

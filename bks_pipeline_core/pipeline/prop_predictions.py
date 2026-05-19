@@ -26,7 +26,7 @@ def build_prop_predictions(
     results: list[dict[str, Any]],
     prop_lines: dict[str, list[dict[str, Any]]],
     platt_coeffs: dict[str, dict[str, Any]] | None = None,
-    sport: str = "nba",
+    sport: str | None = None,
 ) -> list[dict[str, Any]]:
     """Build prop prediction documents for players with prop lines.
 
@@ -37,11 +37,13 @@ def build_prop_predictions(
         platt_coeffs: Optional dict of Platt coefficients keyed by stat type.
             ``{"pts": {"A": -1.2, "B": 0.1}, ...}``.
             If ``None``, raw model probabilities are used uncalibrated.
-        sport: Sport identifier (default "nba").
+        sport: Sport collection key (e.g. "nba", "mlb"). Defaults to the active config.
 
     Returns:
         List of prop prediction documents (one per player with lines).
     """
+    if sport is None:
+        sport = get_active_config().sport_collection_key
 
     def _norm(name: str) -> str:
         """Normalize a player name for fuzzy matching across data sources.

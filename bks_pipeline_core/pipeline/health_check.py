@@ -8,6 +8,8 @@ from typing import Any
 
 import requests
 
+from bks_pipeline_core.sport_config import get_active_config
+
 
 class CheckStatus(str, Enum):
     """Result status of a single health check."""
@@ -438,7 +440,7 @@ def generate_alert_html(
     return (
         f'<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto">'
         f'<div style="background:{bg};color:#fff;padding:16px 20px;border-radius:6px 6px 0 0">'
-        f'<h2 style="margin:0">BKS Basketball Pipeline Alert</h2>'
+        f'<h2 style="margin:0">BKS {get_active_config().sport_display_name} Pipeline Alert</h2>'
         f'<span style="font-size:14px">{status.value.upper()}</span>'
         f"</div>"
         f'<div style="padding:16px 20px;border:1px solid #ddd;border-top:none">'

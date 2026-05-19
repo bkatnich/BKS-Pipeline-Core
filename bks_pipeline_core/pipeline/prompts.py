@@ -6,6 +6,8 @@ Rules:
   in other modules are forbidden.
 """
 
+from bks_pipeline_core.sport_config import get_active_config
+
 # ---------------------------------------------------------------------------
 # Model + token constants
 # ---------------------------------------------------------------------------
@@ -143,7 +145,7 @@ def build_analysis_prompts(
         else "- Salary data is not available for this slate. Do not reference salary, price, value, cost, or bargain."
     )
 
-    user = f"""Today is {today_et}. This is a {game_count}-game NBA {round_description} slate.
+    user = f"""Today is {today_et}. This is a {game_count}-game {get_active_config().sport_collection_key.upper()} {round_description} slate.
 
 {playoff_context}
 
@@ -220,7 +222,7 @@ def build_translation_prompt(full_lang_name: str, context: str = "") -> str:
     """
     context_hint = f" Context: {context}." if context else ""
     return (
-        f"You are a professional sports translator specializing in NBA daily fantasy sports.{context_hint} "
+        f"You are a professional sports translator specializing in {get_active_config().sport_collection_key.upper()} daily fantasy sports.{context_hint} "
         f"Translate the following text to {full_lang_name}. "
         "Preserve all player names, team abbreviations, numbers, and Markdown formatting exactly. "
         "Return only the translated text — no explanation, no preamble."
