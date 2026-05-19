@@ -18,6 +18,24 @@ pytest
 pytest tests/path/to/test_file.py::test_function_name
 ```
 
+## Versioning and Release
+
+This package is consumed by the sport repos via pip, pinned to a GitHub tag:
+
+```
+bks-pipeline-core @ git+https://github.com/bkatnich/BKS-Pipeline-Core.git@v0.1.0
+```
+
+**To release a new version:**
+1. Update `version` in `pyproject.toml`
+2. Commit and push to `main`
+3. Tag the release: `git tag vX.Y.Z && git push origin vX.Y.Z`
+4. Update the pin in each sport repo's `functions/requirements.txt`
+
+Sport repos that consume this package:
+- `/Users/Britton/Documents/Repositories/BlackKatt/Basketball/BKS-Basketball-Server-Firebase`
+- `/Users/Britton/Documents/Repositories/BlackKatt/Baseball/BKS-Baseball-Server-Firebase`
+
 ## Architecture
 
 **BKS-Pipeline-Core** is a shared Python library consumed by BKS (BlackKatt Sports) backend services. It provides reusable components for multi-sport DFS (Daily Fantasy Sports) analytics pipelines, subscription gating, and Firebase/GCP integration.
@@ -37,13 +55,6 @@ pytest tests/path/to/test_file.py::test_function_name
 - **`entitlements.py`** — Controls which response fields each subscription tier can see.
 
 - **`utils/http_retry.py`** — HTTP client with exponential backoff + jitter. Retries on 429, 5xx, and connection errors.
-
-### Related Repos (local)
-
-- **Basketball server**: `/Users/Britton/Documents/Repositories/BlackKatt/Basketball/BKS-Basketball-Server-Firebase`
-- **Baseball server**: `/Users/Britton/Documents/Repositories/BlackKatt/Baseball/BKS-Baseball-Server-Firebase`
-
-These are the Firebase/Cloud Functions backends that consume this package.
 
 ### Key Patterns
 
