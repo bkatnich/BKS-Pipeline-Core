@@ -9,6 +9,13 @@ from firebase_functions import https_fn
 from bks_pipeline_core.models.user import TIER_EXPIRED, TIER_TRIAL, UserDoc
 from bks_pipeline_core.sport_config import get_active_config
 
+__all__ = [
+    "require_admin",
+    "require_auth",
+    "require_tier",
+    "_get_or_create_user",
+]
+
 # firebase_functions stubs don't export Response; access at runtime only.
 _Response = https_fn.Response  # type: ignore[attr-defined]
 

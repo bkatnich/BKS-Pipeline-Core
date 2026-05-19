@@ -30,6 +30,14 @@ from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "grade_playoff_trust",
+    "load_playoff_trust",
+    "load_series_stats",
+    "_compute_series_aggregates",
+    "_mae_to_trust",
+]
+
 # MAE-as-fraction-of-baseline → trust score mapping (upper bounds)
 _TRUST_BREAKPOINTS: list[tuple[float, float]] = [
     (0.15, 1.00),

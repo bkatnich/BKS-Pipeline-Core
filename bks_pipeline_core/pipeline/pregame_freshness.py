@@ -21,6 +21,19 @@ from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "FRESHNESS_COLLECTION",
+    "GameScheduleItem",
+    "FreshnessResult",
+    "compute_per_game_schedule_times",
+    "check_game_data_freshness",
+    "refresh_stale_data",
+    "refresh_team_trends",
+    "write_freshness_signal",
+    "should_skip_dedup",
+    "_is_stale",
+]
+
 FRESHNESS_COLLECTION = "game_freshness"
 
 

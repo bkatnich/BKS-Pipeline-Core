@@ -14,6 +14,25 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "CONFERENCES",
+    "ROUND_NAMES",
+    "SERIES_WIN_THRESHOLD",
+    "HOME_COURT_PATTERN",
+    "series_id",
+    "build_series_doc",
+    "record_game_result",
+    "generate_first_round_matchups",
+    "determine_next_round_series",
+    "advance_bracket",
+    "write_series_to_firestore",
+    "get_series",
+    "get_all_series",
+    "update_series",
+    "_r1_matchup_index",
+    "_winner_seed",
+]
+
 # NBA playoff bracket: first-round matchups by seed
 _FIRST_ROUND_MATCHUPS = [(1, 8), (2, 7), (3, 6), (4, 5)]
 

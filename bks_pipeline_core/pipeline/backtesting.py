@@ -10,6 +10,24 @@ from typing import Any
 from bks_pipeline_core.pipeline.accuracy_report import DISABLED_SIGNAL_FIELDS as _ALWAYS_DISABLED_SIGNALS
 from bks_pipeline_core.pipeline.accuracy_report import PLAYOFF_DISABLED_SIGNAL_FIELDS as _PLAYOFF_DISABLED_SIGNALS
 
+__all__ = [
+    "SIGNAL_MULTIPLIERS",
+    "PLATFORMS",
+    "join_predictions_actuals",
+    "compute_match_coverage",
+    "compute_overall_accuracy",
+    "compute_tier_accuracy",
+    "compute_signal_accuracy",
+    "compute_floor_ceiling_calibration",
+    "compute_stat_accuracy",
+    "compute_prop_brier_scores",
+    "compute_game_totals_accuracy",
+    "compute_daily_accuracy",
+    "compute_rolling_accuracy",
+    "generate_insights",
+    "_pearson_r",
+]
+
 # Multiplier fields present in the opportunity results dict.
 # Each is decomposed independently for calibration analysis.
 SIGNAL_MULTIPLIERS: list[str] = [

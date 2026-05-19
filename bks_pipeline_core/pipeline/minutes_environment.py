@@ -15,6 +15,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = [
+    "blowout_probability",
+    "compute_minutes_distribution",
+    "compute_fp_distribution",
+    "project_minutes",
+    "minutes_environment_multiplier",
+    "_dampen_high_score",
+    "_MULT_MIN",
+    "_MULT_MAX",
+]
+
 # P(blowout) breakpoints: (abs_spread, probability)
 # Piecewise-linear interpolation between breakpoints.
 # Based on published NBA research (2015-2024 seasons aggregate).
