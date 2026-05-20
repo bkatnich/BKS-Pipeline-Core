@@ -47,7 +47,7 @@ def _compute_score(
         return 0.0
 
     # Determine which dd/td fields to check — handle both bool flags and count stats
-    cat_pts = stat.get("pts") or 0
+    cat_pts = stat.get(weights.pts_field) or 0
     cat_reb = stat.get("reb") or 0
     cat_ast = stat.get("ast") or 0
     cat_stl = stat.get("stl") or 0
