@@ -80,6 +80,7 @@ def build_analysis_prompts(
     lang_instruction: str = "",
     salary_medians_text: str = "",
     arena_context_text: str = "",
+    series_context_text: str = "",
 ) -> tuple[str, str]:
     """Return (system, user) prompts for slate analysis (v3).
 
@@ -95,6 +96,8 @@ def build_analysis_prompts(
             when no salary data is available (off-night, FD platform).
         arena_context_text: Optional pre-formatted arena factors block (elevation, travel distance).
             Only populated when at least one game has a meaningful arena factor. Empty string otherwise.
+        series_context_text: Optional pre-formatted playoff series context block (series score,
+            game number, per-player series averages). Only populated during playoffs. Empty string otherwise.
     """
     system = (
         "You are a DFS analyst writing for a sharp, experienced daily-fantasy audience. "
@@ -125,6 +128,19 @@ def build_analysis_prompts(
         if arena_context_text
         else ""
     )
+    series_context_block = (
+        f"\n## Playoff Series Context\n{series_context_text}\n"
+        if series_context_text
+        else ""
+    )
+    series_rules = (
+        "- Playoff Series Context is provided. Factor in series score (desperation vs. close-out), "
+        "game number, and per-player series trends when assessing upside. A team trailing 3-1 faces "
+        "must-win pressure; a team up 3-1 may rest stars in a blowout. Players whose series avg FP "
+        "exceeds their season avg are trending into this matchup — prioritize them."
+        if series_context_text
+        else ""
+    )
     arena_rules = (
         "- Arena factors are provided. Altitude (Denver 5,280 ft) and long road trips suppress "
         "visiting team stamina and shooting efficiency — especially in Q4. Factor this into "
@@ -152,7 +168,7 @@ def build_analysis_prompts(
 ## Game Lines
 <!-- Each row: Away @ Home | Spread | Total -->
 {games_text}
-{salary_context_block}{arena_context_block}
+{salary_context_block}{arena_context_block}{series_context_block}
 ## Player Pool
 <!-- "Recent Avg FP" = average fantasy points over the last 5 games played. -->
 <!-- "Season Avg FP" = full season average fantasy points. -->
@@ -171,6 +187,7 @@ def build_analysis_prompts(
 - Bold all player names with double asterisks.
 {salary_rules}
 {arena_rules}
+{series_rules}
 - Return only the JSON object, no prose outside it."""
     return system, user
 
