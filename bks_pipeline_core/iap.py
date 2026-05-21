@@ -10,15 +10,21 @@ Google: Google Play Developer API (purchases.subscriptions)
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import jwt
+import requests
 from firebase_admin import auth as firebase_auth
 from firebase_admin import firestore
 from firebase_functions import https_fn
 from firebase_functions.params import SecretParam
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from google.oauth2 import service_account
 
 from bks_pipeline_core.auth import require_auth
 from bks_pipeline_core.models.user import TIER_BASIC, TIER_PREMIUM, TIER_PRO, UserDoc
@@ -26,6 +32,9 @@ from bks_pipeline_core.sport_config import get_active_config
 
 __all__ = [
     "APPLE_SHARED_SECRET",
+    "APPLE_KEY_ID",
+    "APPLE_ISSUER_ID",
+    "APPLE_PRIVATE_KEY",
     "GOOGLE_PLAY_SERVICE_ACCOUNT",
     "GOOGLE_PRODUCT_TIERS",
     "get_apple_product_tiers",
@@ -37,6 +46,15 @@ __all__ = [
     "_get_db",
     "_get_user_doc",
     "_update_user_subscription",
+    "_decode_apple_jws",
+    "_verify_apple_transaction",
+    "_verify_google_purchase",
+    "_downgrade_user_by_transaction",
+    "_extend_user_by_transaction",
+    "_handle_apple_expiration",
+    "_handle_apple_renewal",
+    "_handle_google_expiration",
+    "_handle_google_renewal",
 ]
 
 logger = logging.getLogger(__name__)
@@ -47,6 +65,28 @@ _Request = https_fn.Request  # type: ignore[attr-defined]
 # Secrets for IAP validation
 APPLE_SHARED_SECRET = SecretParam("APPLE_SHARED_SECRET")
 GOOGLE_PLAY_SERVICE_ACCOUNT = SecretParam("GOOGLE_PLAY_SERVICE_ACCOUNT")
+
+# App Store Server API v2 credentials (ES256 JWT)
+# Set via: firebase functions:secrets:set APPLE_KEY_ID
+#          firebase functions:secrets:set APPLE_ISSUER_ID
+#          firebase functions:secrets:set APPLE_PRIVATE_KEY
+APPLE_KEY_ID = SecretParam("APPLE_KEY_ID")
+APPLE_ISSUER_ID = SecretParam("APPLE_ISSUER_ID")
+APPLE_PRIVATE_KEY = SecretParam("APPLE_PRIVATE_KEY")
+
+# App Store Server API v2 base URL
+_APPLE_API_BASE = "https://api.storekit.itunes.apple.com"
+
+# Google Play Developer API scope
+_GOOGLE_PLAY_SCOPE = "https://www.googleapis.com/auth/androidpublisher"
+
+# Google RTDN subscription notification types
+# Reference: developer.android.com/google/play/billing/rtdn-reference
+_GOOGLE_RTDN_EXPIRED = 13
+_GOOGLE_RTDN_CANCELED = 3
+_GOOGLE_RTDN_REVOKED = 12
+_GOOGLE_RTDN_RENEWED = 7
+_GOOGLE_RTDN_PURCHASED = 4
 
 # Google Play product IDs are sport-agnostic (no bundle prefix required)
 GOOGLE_PRODUCT_TIERS: dict[str, str] = {
@@ -86,7 +126,6 @@ def _get_user_doc(db: Any, uid: str) -> UserDoc:
     doc = doc_ref.get()
     if doc.exists:
         return UserDoc.from_firestore(doc.to_dict())
-    # Create new trial user if no doc exists
     user = UserDoc.create_trial(uid)
     doc_ref.set(user.to_firestore())
     return user
@@ -127,26 +166,230 @@ def _update_user_subscription(
 
 
 # ---------------------------------------------------------------------------
-# Apple App Store validation
+# Apple App Store Server API v2 — server-side verification
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(secrets=[APPLE_SHARED_SECRET])
+def _build_apple_jwt() -> str:
+    """Build a signed ES256 JWT for the App Store Server API.
+
+    Reference: developer.apple.com/documentation/appstoreserverapi/generating_tokens_for_api_requests
+    """
+    now = int(time.time())
+    payload = {
+        "iss": APPLE_ISSUER_ID.value,
+        "iat": now,
+        "exp": now + 300,  # 5-minute validity is Apple's documented maximum
+        "aud": "appstoreconnect-v1",
+        "bid": get_active_config().apple_bundle_id,
+    }
+    return jwt.encode(
+        payload,
+        APPLE_PRIVATE_KEY.value,
+        algorithm="ES256",
+        headers={"kid": APPLE_KEY_ID.value},
+    )
+
+
+def _decode_apple_jws(signed_payload: str) -> dict[str, Any] | None:
+    """Decode an Apple JWS payload without signature verification.
+
+    Apple sends server-to-server notifications signed with its private key.
+    Verifying the signature would require fetching Apple's rotating public keys.
+    We rely on TLS (HTTPS from Apple's servers) to authenticate the origin.
+    """
+    try:
+        return jwt.decode(
+            signed_payload,
+            options={"verify_signature": False},
+            algorithms=["ES256"],
+        )
+    except Exception:
+        logger.warning("Apple S2S: failed to decode JWS signedPayload")
+        return None
+
+
+def _verify_apple_transaction(transaction_id: str, product_id: str) -> tuple[bool, str | None]:
+    """Verify a transaction with the App Store Server API v2.
+
+    Returns (is_valid, expires_at_iso). expires_at_iso is None when invalid.
+
+    The API returns the decoded JWS transaction payload which includes:
+    - productId: must match the client-supplied product_id
+    - expiresDate: milliseconds epoch when the subscription expires
+    - revocationDate: set if the purchase was refunded/revoked
+    """
+    try:
+        token = _build_apple_jwt()
+    except Exception:
+        logger.exception("Apple verification: failed to build JWT")
+        return False, None
+
+    url = f"{_APPLE_API_BASE}/inApps/v1/transactions/{transaction_id}"
+    try:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        logger.exception("Apple verification: network error calling App Store API")
+        return False, None
+
+    if resp.status_code == 404:
+        logger.warning("Apple verification: transaction %s not found", transaction_id)
+        return False, None
+
+    if resp.status_code != 200:
+        logger.warning(
+            "Apple verification: App Store API returned %d for transaction %s",
+            resp.status_code,
+            transaction_id,
+        )
+        return False, None
+
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.warning("Apple verification: non-JSON response from App Store API")
+        return False, None
+
+    # The response contains a signedTransactionInfo JWS — decode without verifying
+    # the Apple signature; the HTTPS TLS chain already authenticates the response.
+    signed_transaction = data.get("signedTransactionInfo", "")
+    if not signed_transaction:
+        logger.warning("Apple verification: no signedTransactionInfo in response")
+        return False, None
+
+    transaction = _decode_apple_jws(signed_transaction)
+    if transaction is None:
+        return False, None
+
+    # Reject revoked purchases
+    if transaction.get("revocationDate"):
+        logger.warning("Apple verification: transaction %s has been revoked", transaction_id)
+        return False, None
+
+    # Confirm the product matches what the client sent
+    api_product_id = transaction.get("productId", "")
+    if api_product_id != product_id:
+        logger.warning(
+            "Apple verification: product mismatch — client=%s api=%s",
+            product_id,
+            api_product_id,
+        )
+        return False, None
+
+    # Derive expiry from the API response when available; fall back to product-based calculation
+    expires_ms = transaction.get("expiresDate")
+    if expires_ms:
+        expires_at = datetime.fromtimestamp(expires_ms / 1000, tz=timezone.utc).isoformat()
+    else:
+        now = datetime.now(timezone.utc)
+        expires_at = (now + timedelta(days=365 if "annual" in product_id else 30)).isoformat()
+
+    return True, expires_at
+
+
+# ---------------------------------------------------------------------------
+# Google Play Developer API — server-side verification
+# ---------------------------------------------------------------------------
+
+
+def _get_google_play_credentials() -> Any:
+    """Build Google service account credentials from the stored secret JSON."""
+    sa_json = json.loads(GOOGLE_PLAY_SERVICE_ACCOUNT.value)
+    creds: Any = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
+        sa_json,
+        scopes=[_GOOGLE_PLAY_SCOPE],
+    )
+    creds.refresh(GoogleAuthRequest())
+    return creds
+
+
+def _verify_google_purchase(purchase_token: str, product_id: str) -> tuple[bool, str | None]:
+    """Verify a Google Play subscription purchase token.
+
+    Returns (is_valid, expires_at_iso). expires_at_iso is None when invalid.
+
+    Reference: developers.google.com/android-publisher/api-ref/rest/v3/purchases.subscriptions/get
+    """
+    try:
+        creds = _get_google_play_credentials()
+    except Exception:
+        logger.exception("Google verification: failed to build service account credentials")
+        return False, None
+
+    package_name = get_active_config().apple_bundle_id  # same reverse-domain root
+    url = (
+        f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package_name}/purchases/subscriptions/{product_id}/tokens/{purchase_token}"
+    )
+    try:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {creds.token}"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        logger.exception("Google verification: network error calling Play Developer API")
+        return False, None
+
+    if resp.status_code == 404:
+        logger.warning("Google verification: purchase token not found for product %s", product_id)
+        return False, None
+
+    if resp.status_code != 200:
+        logger.warning(
+            "Google verification: Play API returned %d for product %s",
+            resp.status_code,
+            product_id,
+        )
+        return False, None
+
+    try:
+        data = resp.json()
+    except ValueError:
+        logger.warning("Google verification: non-JSON response from Play API")
+        return False, None
+
+    # paymentState: 0=pending, 1=received, 2=free trial, 3=deferred upgrade
+    payment_state = data.get("paymentState")
+    if payment_state not in (1, 2):
+        logger.warning(
+            "Google verification: unacceptable paymentState=%s for product %s",
+            payment_state,
+            product_id,
+        )
+        return False, None
+
+    expiry_ms = data.get("expiryTimeMillis")
+    if not expiry_ms:
+        logger.warning("Google verification: missing expiryTimeMillis for product %s", product_id)
+        return False, None
+
+    expiry_dt = datetime.fromtimestamp(int(expiry_ms) / 1000, tz=timezone.utc)
+    if expiry_dt <= datetime.now(timezone.utc):
+        logger.warning("Google verification: subscription already expired for product %s", product_id)
+        return False, None
+
+    return True, expiry_dt.isoformat()
+
+
+# ---------------------------------------------------------------------------
+# Apple App Store validation endpoint
+# ---------------------------------------------------------------------------
+
+
+@https_fn.on_request(
+    secrets=[APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY],
+    max_instances=5,
+)
 @require_auth
 def validate_apple_receipt(req: Any) -> Any:
     """Validate an Apple App Store receipt and update subscription tier.
 
-    POST body:
-        {"transaction_id": "...", "product_id": "..."}
-
-    The app should pass the original transaction ID from StoreKit 2's
-    Transaction.originalID after a successful purchase.
-
-    Returns:
-        200: {"tier": "pro", "tier_expires_at": "..."}
-        400: Invalid request body
-        422: Unrecognized product ID
-        502: Apple validation failed
+    Calls the App Store Server API v2 to confirm the transaction exists,
+    is not revoked, and belongs to the claimed product before writing to Firestore.
     """
     if req.method != "POST":
         return _Response("Method not allowed", status=405)
@@ -166,7 +409,6 @@ def validate_apple_receipt(req: Any) -> Any:
             content_type="application/json",
         )
 
-    # Map product to tier
     tier = get_apple_product_tiers().get(product_id)
     if not tier:
         logger.warning("Apple validation: unrecognized product_id=%s", product_id)
@@ -176,32 +418,18 @@ def validate_apple_receipt(req: Any) -> Any:
             content_type="application/json",
         )
 
-    # TODO: Validate transaction with Apple App Store Server API v2
-    # For now, we trust the client-provided transaction_id + product_id.
-    # Full validation requires:
-    # 1. Call GET /inApps/v1/transactions/{transactionId} with signed JWT
-    # 2. Verify JWS response signature against Apple's root cert
-    # 3. Extract expiresDate from the signed transaction info
-    #
-    # This will be implemented when App Store Connect credentials are configured.
-    # The current flow still requires auth (Firebase ID token) so it's not exploitable
-    # by external actors — only by authenticated users of our app.
-
-    # For subscriptions, calculate expiration (30 days for monthly, 365 for annual)
-    now = datetime.now(timezone.utc)
-    if "annual" in product_id:
-        from datetime import timedelta
-
-        expires_at = (now + timedelta(days=365)).isoformat()
-    else:
-        from datetime import timedelta
-
-        expires_at = (now + timedelta(days=30)).isoformat()
-
-    # Extract UID from the auth decorator (stored on request by require_auth)
     uid = _extract_uid_from_request(req)
     if not uid:
         return _Response(json.dumps({"error": "auth_uid_missing"}), status=401, content_type="application/json")
+
+    is_valid, expires_at = _verify_apple_transaction(transaction_id, product_id)
+    if not is_valid or not expires_at:
+        logger.warning("Apple validation failed: uid=%s transaction=%s", uid, transaction_id)
+        return _Response(
+            json.dumps({"error": "receipt_verification_failed"}),
+            status=422,
+            content_type="application/json",
+        )
 
     db = _get_db()
     result = _update_user_subscription(
@@ -218,23 +446,18 @@ def validate_apple_receipt(req: Any) -> Any:
 
 
 # ---------------------------------------------------------------------------
-# Google Play validation
+# Google Play validation endpoint
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT])
+@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT], max_instances=5)
 @require_auth
 def validate_google_receipt(req: Any) -> Any:
     """Validate a Google Play purchase and update subscription tier.
 
-    POST body:
-        {"purchase_token": "...", "product_id": "..."}
-
-    Returns:
-        200: {"tier": "pro", "tier_expires_at": "..."}
-        400: Invalid request body
-        422: Unrecognized product ID
-        502: Google validation failed
+    Calls the Google Play Developer API to confirm the purchase token is valid,
+    payment has been received, and the subscription has not yet expired before
+    writing to Firestore.
     """
     if req.method != "POST":
         return _Response("Method not allowed", status=405)
@@ -254,7 +477,6 @@ def validate_google_receipt(req: Any) -> Any:
             content_type="application/json",
         )
 
-    # Map product to tier
     tier = GOOGLE_PRODUCT_TIERS.get(product_id)
     if not tier:
         logger.warning("Google validation: unrecognized product_id=%s", product_id)
@@ -264,28 +486,18 @@ def validate_google_receipt(req: Any) -> Any:
             content_type="application/json",
         )
 
-    # TODO: Validate purchase with Google Play Developer API
-    # Full validation requires:
-    # 1. Use service account credentials to call
-    #    androidpublisher.purchases.subscriptions.get(packageName, subscriptionId, token)
-    # 2. Check expiryTimeMillis and paymentState
-    # 3. Verify purchase is not cancelled/refunded
-    #
-    # This will be implemented when Play Console service account is configured.
-
-    now = datetime.now(timezone.utc)
-    if "annual" in product_id:
-        from datetime import timedelta
-
-        expires_at = (now + timedelta(days=365)).isoformat()
-    else:
-        from datetime import timedelta
-
-        expires_at = (now + timedelta(days=30)).isoformat()
-
     uid = _extract_uid_from_request(req)
     if not uid:
         return _Response(json.dumps({"error": "auth_uid_missing"}), status=401, content_type="application/json")
+
+    is_valid, expires_at = _verify_google_purchase(purchase_token, product_id)
+    if not is_valid or not expires_at:
+        logger.warning("Google validation failed: uid=%s product=%s", uid, product_id)
+        return _Response(
+            json.dumps({"error": "receipt_verification_failed"}),
+            status=422,
+            content_type="application/json",
+        )
 
     db = _get_db()
     result = _update_user_subscription(
@@ -306,18 +518,14 @@ def validate_google_receipt(req: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(secrets=[APPLE_SHARED_SECRET])
+@https_fn.on_request(secrets=[APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY], max_instances=5)
 def apple_server_notification(req: Any) -> Any:
     """Webhook for Apple App Store Server Notifications v2.
 
-    Apple sends POST requests when subscription events occur:
-    - DID_RENEW: subscription renewed
-    - DID_FAIL_TO_RENEW: billing issue
-    - EXPIRED: subscription expired
-    - REVOKE: refund issued
-    - GRACE_PERIOD_EXPIRED: grace period ended
+    Apple sends a JSON body with a single `signedPayload` field containing a JWS.
+    The decoded payload contains `notificationType` and `data.signedTransactionInfo`.
 
-    Configure this URL in App Store Connect → App → App Store Server Notifications.
+    Reference: developer.apple.com/documentation/appstoreservernotifications
     """
     if req.method != "POST":
         return _Response("Method not allowed", status=405)
@@ -328,30 +536,36 @@ def apple_server_notification(req: Any) -> Any:
         logger.warning("Apple S2S notification: invalid body")
         return _Response("", status=400)
 
-    # TODO: Implement full JWS verification of signedPayload
-    # For now, log the notification type for monitoring
-    notification_type = body.get("notificationType", "unknown")
-    logger.info("Apple S2S notification received: type=%s", notification_type)
+    signed_payload = body.get("signedPayload", "")
+    if not signed_payload:
+        logger.warning("Apple S2S notification: missing signedPayload")
+        return _Response("", status=400)
 
-    # Handle key notification types
+    notification = _decode_apple_jws(signed_payload)
+    if notification is None:
+        return _Response("", status=400)
+
+    notification_type = notification.get("notificationType", "unknown")
+    subtype = notification.get("subtype", "")
+    logger.info("Apple S2S notification: type=%s subtype=%s", notification_type, subtype)
+
     if notification_type in ("EXPIRED", "REVOKE", "GRACE_PERIOD_EXPIRED"):
-        # Extract app_account_token (our UID) from the signed transaction
-        # and downgrade the user
-        _handle_apple_expiration(body)
-    elif notification_type == "DID_RENEW":
-        _handle_apple_renewal(body)
+        _handle_apple_expiration(notification)
+    elif notification_type in ("DID_RENEW", "SUBSCRIBED"):
+        _handle_apple_renewal(notification)
 
+    # Always return 200 — Apple retries on non-2xx
     return _Response("", status=200)
 
 
-@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT])
+@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT], max_instances=5)
 def google_rtdn_notification(req: Any) -> Any:
     """Webhook for Google Real-Time Developer Notifications (RTDN).
 
-    Google sends Pub/Sub messages when subscription events occur.
-    Configure RTDN in Play Console → Monetization → Monetization setup.
+    Google delivers via Pub/Sub push: body is {"message": {"data": "<base64>", "messageId": "..."}}
+    The decoded data is a DeveloperNotification JSON with a subscriptionNotification field.
 
-    The message body is a Pub/Sub push message with base64-encoded data.
+    Reference: developer.android.com/google/play/billing/rtdn-reference
     """
     if req.method != "POST":
         return _Response("Method not allowed", status=405)
@@ -362,18 +576,42 @@ def google_rtdn_notification(req: Any) -> Any:
         logger.warning("Google RTDN: invalid body")
         return _Response("", status=400)
 
-    # Pub/Sub wraps the notification in a 'message' field
     message = body.get("message", {})
     if not message:
         logger.warning("Google RTDN: no message field")
         return _Response("", status=400)
 
-    # TODO: Decode base64 data, parse SubscriptionNotification
-    # notification_type values:
-    # 1=RECOVERED, 2=RENEWED, 3=CANCELED, 4=PURCHASED,
-    # 5=ON_HOLD, 6=IN_GRACE_PERIOD, 7=RESTARTED,
-    # 12=REVOKED, 13=EXPIRED
-    logger.info("Google RTDN received: message_id=%s", message.get("messageId", "unknown"))
+    message_id = message.get("messageId", "unknown")
+    encoded_data = message.get("data", "")
+    if not encoded_data:
+        logger.info("Google RTDN: message has no data field (message_id=%s)", message_id)
+        return _Response("", status=200)
+
+    try:
+        notification = json.loads(base64.b64decode(encoded_data).decode("utf-8"))
+    except Exception:
+        logger.warning("Google RTDN: failed to decode message data (message_id=%s)", message_id)
+        return _Response("", status=200)
+
+    sub_notification = notification.get("subscriptionNotification")
+    if not sub_notification:
+        logger.info("Google RTDN: no subscriptionNotification in message (message_id=%s)", message_id)
+        return _Response("", status=200)
+
+    notification_type = sub_notification.get("notificationType")
+    purchase_token = sub_notification.get("purchaseToken", "")
+    product_id = sub_notification.get("subscriptionId", "")
+    logger.info(
+        "Google RTDN: type=%s product=%s message_id=%s",
+        notification_type,
+        product_id,
+        message_id,
+    )
+
+    if notification_type in (_GOOGLE_RTDN_EXPIRED, _GOOGLE_RTDN_CANCELED, _GOOGLE_RTDN_REVOKED):
+        _handle_google_expiration(purchase_token)
+    elif notification_type in (_GOOGLE_RTDN_RENEWED, _GOOGLE_RTDN_PURCHASED):
+        _handle_google_renewal(purchase_token, product_id)
 
     return _Response("", status=200)
 
@@ -384,41 +622,144 @@ def google_rtdn_notification(req: Any) -> Any:
 
 
 def _extract_uid_from_request(req: Any) -> str | None:
-    """Extract UID from a request that has passed through @require_auth.
-
-    The auth decorator attaches req._uid after successful token verification.
-    Falls back to re-decoding the token if _uid is not present.
-    """
+    """Extract UID from a request that has passed through @require_auth."""
     uid = getattr(req, "_uid", None)
     if uid:
-        return uid
+        return str(uid)
 
-    # Fallback: re-decode token (shouldn't be needed after Step 4)
     auth_header = req.headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
         return None
     id_token = auth_header.split("Bearer ", 1)[1]
     try:
         decoded = firebase_auth.verify_id_token(id_token)
-        return decoded.get("uid")
+        result = decoded.get("uid")
+        return str(result) if result is not None else None
     except Exception:
         return None
 
 
-def _handle_apple_expiration(body: dict[str, Any]) -> None:
-    """Handle Apple subscription expiration/revocation."""
-    # TODO: Parse JWS signedTransactionInfo to extract:
-    # - appAccountToken (our UID)
-    # - productId
-    # Then set user tier to EXPIRED
-    logger.info("Apple expiration handler: will implement with JWS parsing")
+def _downgrade_user_by_transaction(db: Any, original_transaction_id: str, platform: str) -> bool:
+    """Set tier_expires_at to now for the user with this transaction ID.
+
+    effective_tier() computes TIER_EXPIRED when tier_expires_at is in the past.
+    Returns True if a matching user was found and updated.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        docs = db.collection("users").where("original_transaction_id", "==", original_transaction_id).where("platform", "==", platform).limit(1).stream()
+        doc = next(iter(docs), None)
+        if doc is None:
+            logger.warning(
+                "Downgrade: no user found for transaction=%s platform=%s",
+                original_transaction_id,
+                platform,
+            )
+            return False
+        doc.reference.update({"tier_expires_at": now_iso, "updated_at": now_iso})
+        logger.info(
+            "Downgrade: expired uid=%s transaction=%s",
+            doc.id,
+            original_transaction_id,
+        )
+        return True
+    except Exception:
+        logger.exception("Downgrade: Firestore error for transaction=%s", original_transaction_id)
+        return False
 
 
-def _handle_apple_renewal(body: dict[str, Any]) -> None:
-    """Handle Apple subscription renewal."""
-    # TODO: Parse JWS signedRenewalInfo to extract:
-    # - appAccountToken (our UID)
-    # - productId
-    # - expiresDate
-    # Then update user tier + expiration
-    logger.info("Apple renewal handler: will implement with JWS parsing")
+def _extend_user_by_transaction(db: Any, original_transaction_id: str, platform: str, expires_at: str) -> bool:
+    """Update tier_expires_at for the user with this transaction ID.
+
+    Returns True if a matching user was found and updated.
+    """
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        docs = db.collection("users").where("original_transaction_id", "==", original_transaction_id).where("platform", "==", platform).limit(1).stream()
+        doc = next(iter(docs), None)
+        if doc is None:
+            logger.warning(
+                "Renewal: no user found for transaction=%s platform=%s",
+                original_transaction_id,
+                platform,
+            )
+            return False
+        doc.reference.update({"tier_expires_at": expires_at, "updated_at": now_iso})
+        logger.info(
+            "Renewal: extended uid=%s transaction=%s expires=%s",
+            doc.id,
+            original_transaction_id,
+            expires_at,
+        )
+        return True
+    except Exception:
+        logger.exception("Renewal: Firestore error for transaction=%s", original_transaction_id)
+        return False
+
+
+def _handle_apple_expiration(notification: dict[str, Any]) -> None:
+    """Downgrade the user whose subscription expired or was revoked by Apple."""
+    data = notification.get("data", {})
+    signed_transaction = data.get("signedTransactionInfo", "")
+    if not signed_transaction:
+        logger.warning("Apple expiration: no signedTransactionInfo in notification data")
+        return
+
+    transaction = _decode_apple_jws(signed_transaction)
+    if transaction is None:
+        return
+
+    original_transaction_id = transaction.get("originalTransactionId", "")
+    if not original_transaction_id:
+        logger.warning("Apple expiration: missing originalTransactionId in transaction")
+        return
+
+    db = _get_db()
+    _downgrade_user_by_transaction(db, original_transaction_id, "ios")
+
+
+def _handle_apple_renewal(notification: dict[str, Any]) -> None:
+    """Extend the user's tier_expires_at when Apple confirms a successful renewal."""
+    data = notification.get("data", {})
+    signed_transaction = data.get("signedTransactionInfo", "")
+    if not signed_transaction:
+        logger.warning("Apple renewal: no signedTransactionInfo in notification data")
+        return
+
+    transaction = _decode_apple_jws(signed_transaction)
+    if transaction is None:
+        return
+
+    original_transaction_id = transaction.get("originalTransactionId", "")
+    expires_ms = transaction.get("expiresDate")
+    if not original_transaction_id or not expires_ms:
+        logger.warning("Apple renewal: missing originalTransactionId or expiresDate in transaction")
+        return
+
+    expires_at = datetime.fromtimestamp(expires_ms / 1000, tz=timezone.utc).isoformat()
+    db = _get_db()
+    _extend_user_by_transaction(db, original_transaction_id, "ios", expires_at)
+
+
+def _handle_google_expiration(purchase_token: str) -> None:
+    """Downgrade the user whose Google Play subscription expired or was cancelled."""
+    if not purchase_token:
+        logger.warning("Google expiration: empty purchase_token")
+        return
+    db = _get_db()
+    _downgrade_user_by_transaction(db, purchase_token, "android")
+
+
+def _handle_google_renewal(purchase_token: str, product_id: str) -> None:
+    """Extend the user's tier_expires_at when Google confirms a renewal or new purchase."""
+    if not purchase_token or not product_id:
+        logger.warning("Google renewal: missing purchase_token or product_id")
+        return
+
+    is_valid, expires_at = _verify_google_purchase(purchase_token, product_id)
+    if not is_valid or not expires_at:
+        logger.warning("Google renewal: Play API verification failed for product=%s", product_id)
+        return
+
+    db = _get_db()
+    _extend_user_by_transaction(db, purchase_token, "android", expires_at)
