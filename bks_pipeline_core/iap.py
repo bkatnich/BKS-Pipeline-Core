@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -22,7 +23,6 @@ import requests
 from firebase_admin import auth as firebase_auth
 from firebase_admin import firestore
 from firebase_functions import https_fn
-from firebase_functions.params import SecretParam
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.oauth2 import service_account
 
@@ -31,11 +31,6 @@ from bks_pipeline_core.models.user import TIER_BASIC, TIER_PREMIUM, TIER_PRO, Us
 from bks_pipeline_core.sport_config import get_active_config
 
 __all__ = [
-    "APPLE_SHARED_SECRET",
-    "APPLE_KEY_ID",
-    "APPLE_ISSUER_ID",
-    "APPLE_PRIVATE_KEY",
-    "GOOGLE_PLAY_SERVICE_ACCOUNT",
     "GOOGLE_PRODUCT_TIERS",
     "get_apple_product_tiers",
     "validate_apple_receipt",
@@ -62,17 +57,14 @@ logger = logging.getLogger(__name__)
 _Response = https_fn.Response  # type: ignore[attr-defined]
 _Request = https_fn.Request  # type: ignore[attr-defined]
 
-# Secrets for IAP validation
-APPLE_SHARED_SECRET = SecretParam("APPLE_SHARED_SECRET")
-GOOGLE_PLAY_SERVICE_ACCOUNT = SecretParam("GOOGLE_PLAY_SERVICE_ACCOUNT")
-
-# App Store Server API v2 credentials (ES256 JWT)
-# Set via: firebase functions:secrets:set APPLE_KEY_ID
-#          firebase functions:secrets:set APPLE_ISSUER_ID
-#          firebase functions:secrets:set APPLE_PRIVATE_KEY
-APPLE_KEY_ID = SecretParam("APPLE_KEY_ID")
-APPLE_ISSUER_ID = SecretParam("APPLE_ISSUER_ID")
-APPLE_PRIVATE_KEY = SecretParam("APPLE_PRIVATE_KEY")
+# IAP secrets — read from environment at call time so they are never declared
+# as SecretParam at module level. Add them to Secret Manager and re-add
+# SecretParam declarations + decorator secrets= lists once App Store Connect
+# and Play Console credentials are configured:
+#   firebase functions:secrets:set APPLE_KEY_ID
+#   firebase functions:secrets:set APPLE_ISSUER_ID
+#   firebase functions:secrets:set APPLE_PRIVATE_KEY
+#   firebase functions:secrets:set GOOGLE_PLAY_SERVICE_ACCOUNT
 
 # App Store Server API v2 base URL
 _APPLE_API_BASE = "https://api.storekit.itunes.apple.com"
@@ -175,9 +167,14 @@ def _build_apple_jwt() -> str:
 
     Reference: developer.apple.com/documentation/appstoreserverapi/generating_tokens_for_api_requests
     """
+    key_id = os.environ.get("APPLE_KEY_ID", "")
+    issuer_id = os.environ.get("APPLE_ISSUER_ID", "")
+    private_key = os.environ.get("APPLE_PRIVATE_KEY", "")
+    if not key_id or not issuer_id or not private_key:
+        raise RuntimeError("Apple API credentials not configured")
     now = int(time.time())
     payload = {
-        "iss": APPLE_ISSUER_ID.value,
+        "iss": issuer_id,
         "iat": now,
         "exp": now + 300,  # 5-minute validity is Apple's documented maximum
         "aud": "appstoreconnect-v1",
@@ -185,9 +182,9 @@ def _build_apple_jwt() -> str:
     }
     return jwt.encode(
         payload,
-        APPLE_PRIVATE_KEY.value,
+        private_key,
         algorithm="ES256",
-        headers={"kid": APPLE_KEY_ID.value},
+        headers={"kid": key_id},
     )
 
 
@@ -298,7 +295,10 @@ def _verify_apple_transaction(transaction_id: str, product_id: str) -> tuple[boo
 
 def _get_google_play_credentials() -> Any:
     """Build Google service account credentials from the stored secret JSON."""
-    sa_json = json.loads(GOOGLE_PLAY_SERVICE_ACCOUNT.value)
+    sa_raw = os.environ.get("GOOGLE_PLAY_SERVICE_ACCOUNT", "")
+    if not sa_raw:
+        raise RuntimeError("GOOGLE_PLAY_SERVICE_ACCOUNT not configured")
+    sa_json = json.loads(sa_raw)
     creds: Any = service_account.Credentials.from_service_account_info(  # type: ignore[no-untyped-call]
         sa_json,
         scopes=[_GOOGLE_PLAY_SCOPE],
