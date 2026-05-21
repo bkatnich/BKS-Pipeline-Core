@@ -380,10 +380,7 @@ def _verify_google_purchase(purchase_token: str, product_id: str) -> tuple[bool,
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(
-    secrets=[APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY],
-    max_instances=5,
-)
+@https_fn.on_request(max_instances=5)
 @require_auth
 def validate_apple_receipt(req: Any) -> Any:
     """Validate an Apple App Store receipt and update subscription tier.
@@ -450,7 +447,7 @@ def validate_apple_receipt(req: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT], max_instances=5)
+@https_fn.on_request(max_instances=5)
 @require_auth
 def validate_google_receipt(req: Any) -> Any:
     """Validate a Google Play purchase and update subscription tier.
@@ -518,7 +515,7 @@ def validate_google_receipt(req: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-@https_fn.on_request(secrets=[APPLE_KEY_ID, APPLE_ISSUER_ID, APPLE_PRIVATE_KEY], max_instances=5)
+@https_fn.on_request(max_instances=5)
 def apple_server_notification(req: Any) -> Any:
     """Webhook for Apple App Store Server Notifications v2.
 
@@ -558,7 +555,7 @@ def apple_server_notification(req: Any) -> Any:
     return _Response("", status=200)
 
 
-@https_fn.on_request(secrets=[GOOGLE_PLAY_SERVICE_ACCOUNT], max_instances=5)
+@https_fn.on_request(max_instances=5)
 def google_rtdn_notification(req: Any) -> Any:
     """Webhook for Google Real-Time Developer Notifications (RTDN).
 
