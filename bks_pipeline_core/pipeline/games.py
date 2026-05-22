@@ -1,12 +1,11 @@
-"""Games data access layer — reads/writes games with matchup subcollections.
+"""Games data access layer — reads/writes games with subcollection + embedded list.
 
 Storage layout:
-  games/{YYYY-MM-DD}                     — metadata: playing_team_abbrs, odds, synced_at, has_playoff_games
-  games/{YYYY-MM-DD}/matchups/{game_id}  — individual game: home/visitor teams, status, game_type, etc.
+  games/{YYYY-MM-DD}                     — metadata + games_list (denormalized array for single-read access)
+  games/{YYYY-MM-DD}/matchups/{game_id}  — individual game docs (kept for writes/deletes)
 
-This module provides helpers that write the subcollection layout and read it
-back into the same dict shape that build_opportunity_results() expects, so
-the scoring engine doesn't need to change.
+load_games_doc reads from games_list when present (1 read), falling back to the
+matchups subcollection stream (2 reads) for docs written before this change.
 """
 
 import logging
@@ -28,13 +27,15 @@ def write_games(db: Any, date_str: str, games: list[dict[str, Any]]) -> None:
 
     games_ref = db.collection("games").document(date_str)
 
-    # Write parent metadata doc — merge=True preserves odds written by sync_odds
+    # Write parent metadata doc — merge=True preserves odds written by sync_odds.
+    # games_list is a denormalized copy so load_games_doc can read everything in one round trip.
     games_ref.set(
         {
             "date": date_str,
             "playing_team_abbrs": playing_abbrs,
             "has_playoff_games": has_playoff_games,
             "game_count": len(games),
+            "games_list": games,
             "synced_at": datetime.now(timezone.utc).isoformat(),
         },
         merge=True,
@@ -112,6 +113,10 @@ def load_games_doc(db: Any, date_str: str) -> dict[str, Any] | None:
     Returns None if the parent doc doesn't exist.
     Returns a dict with keys: date, playing_team_abbrs, has_playoff_games,
     synced_at, odds, odds_synced_at, games (list of matchup dicts).
+
+    Fast path: if the parent doc contains games_list (written by the current
+    write_games), returns in a single Firestore read.  Falls back to streaming
+    the matchups subcollection for docs written before this change.
     """
     parent_ref = db.collection("games").document(date_str)
     parent_snap = parent_ref.get()
@@ -120,12 +125,15 @@ def load_games_doc(db: Any, date_str: str) -> dict[str, Any] | None:
         return None
 
     parent = parent_snap.to_dict() or {}
-    matchups = [doc.to_dict() or {} for doc in parent_ref.collection("matchups").stream()]
 
-    return {
-        **parent,
-        "games": matchups,
-    }
+    # Single-read fast path: games_list is a denormalized copy of the matchups.
+    if "games_list" in parent:
+        matchups = parent.pop("games_list") or []
+        return {**parent, "games": matchups}
+
+    # Legacy fallback: stream the subcollection (2 round trips total).
+    matchups = [doc.to_dict() or {} for doc in parent_ref.collection("matchups").stream()]
+    return {**parent, "games": matchups}
 
 
 def compute_team_rest_days(db: Any, today_str: str, playing_abbrs: list[str], max_lookback: int = 4) -> dict[str, int]:
