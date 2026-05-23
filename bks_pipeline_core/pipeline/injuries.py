@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -30,7 +31,7 @@ def compute_return_fields(return_date_str: str | None, today: Any) -> dict[str, 
 
 
 class InjuryFetchError(Exception):
-    """Raised when the BallDontLie injury API fails mid-pagination.
+    """Raised when the injury API fails mid-pagination.
 
     Callers must catch this and skip both Firestore write passes to avoid
     incorrectly clearing all players' injury status to null.
@@ -38,17 +39,30 @@ class InjuryFetchError(Exception):
 
 
 def fetch_and_store_injuries(
-    players_ref: Any, db: Any, api_key: str, date_str: str | None = None
+    players_ref: Any,
+    db: Any,
+    api_key: str,
+    date_str: str | None = None,
+    fetch_page_fn: Callable[[int | None, str, logging.Logger], dict[str, Any] | None] | None = None,
 ) -> tuple[int, list[dict[str, Any]]]:
-    """Fetch current injury records from BallDontLie and update player docs.
+    """Fetch current injury records and update player docs.
 
-    Paginates /v1/player_injuries (cursor-based), writes injury_status,
+    Paginates the injury API (cursor-based), writes injury_status,
     injury_return_date, injury_comment, injury_updated_at, days_since_return,
     and is_return_game_window to each affected player doc. Players not on the
     injury report get all fields set to null/False.
 
     Computing days_since_return here (every 20 min) ensures it stays fresh
     rather than going stale for up to 12h if computed during trend sync.
+
+    Args:
+        fetch_page_fn: Injectable page-fetch callable matching the
+            fetch_injuries_page(cursor, api_key, logger) signature.
+            Pass STATS_PROVIDER.fetch_injuries_page from the generated
+            project to route through the active provider. Defaults to
+            a direct import of api.sport_provider.fetch_injuries_page
+            for backward compatibility with callers that cannot access
+            STATS_PROVIDER (e.g. pregame_freshness).
 
     Raises InjuryFetchError if any page fetch fails, so the caller can skip
     all Firestore writes and leave existing injury data untouched.
@@ -59,11 +73,13 @@ def fetch_and_store_injuries(
     cursor: int | None = None
     page = 0
 
-    from api.sport_provider import fetch_injuries_page  # sport-specific lazy import
+    if fetch_page_fn is None:
+        from api.sport_provider import fetch_injuries_page  # sport-specific lazy import
+        fetch_page_fn = fetch_injuries_page
 
     cfg = get_active_config()
     while page < cfg.max_pages:
-        body = fetch_injuries_page(cursor, api_key, logger)
+        body = fetch_page_fn(cursor, api_key, logger)
         if body is None:
             logger.error(
                 "Failed to fetch injuries page %d after 3 attempts — aborting injury sync",
