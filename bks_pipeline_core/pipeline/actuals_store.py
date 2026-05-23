@@ -31,7 +31,7 @@ def fetch_and_store_actuals(
         The actuals dict keyed by player ID, or ``None`` when the API
         returns no stats for the date.
     """
-    from api.balldontlie import fetch_stats_by_date
+    from api.sport_provider import fetch_stats_by_date  # sport-specific lazy import
     from bks_pipeline_core.pipeline.scoring import (
         fantasy_score_raw_dk,
         fantasy_score_raw_fd,
@@ -47,7 +47,7 @@ def fetch_and_store_actuals(
         _log.info("fetch_and_store_actuals: actuals already exist for %s", date)
         return (existing.to_dict() or {}).get("results")
 
-    # Fetch box scores from BallDontLie
+    # Fetch box scores from the sport-specific stats provider
     stats = fetch_stats_by_date(date, api_key, _log)
     if not stats:
         _log.warning("fetch_and_store_actuals: no stats returned for %s", date)
