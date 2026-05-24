@@ -78,7 +78,9 @@ class OrchestratorConfig:
 
 
 class _StatsProviderProto(Protocol):
-    def fetch_active_players(self, api_key: str, logger: logging.Logger) -> list[dict[str, Any]]: ...
+    def fetch_active_rosters(self, logger: logging.Logger) -> frozenset[int]: ...
+
+    def fetch_player_details(self, person_ids: frozenset[int], logger: logging.Logger) -> list[dict[str, Any]]: ...
 
     def fetch_games_for_date(self, date_str: str, api_key: str, logger: logging.Logger) -> list[dict[str, Any]]: ...
 
@@ -329,20 +331,50 @@ def fetch_and_store_players(
 
     players_ref = db.collection("players")
 
-    # --- Phase 1: fetch active player list ---
-    all_players = stats_provider.fetch_active_players(api_key, logger)
+    # --- Phase 1: delta roster sync ---
+    # Fetch the canonical set of active person IDs from the authoritative source.
+    # Compare against the last-known set stored in system/roster_state to compute
+    # adds and removes. Only fetch full player details for new arrivals.
+    current_person_ids: frozenset[int] = stats_provider.fetch_active_rosters(logger)
     logger.info(
-        "Phase 1 complete: %d active players fetched (%.1fs)",
-        len(all_players),
+        "Phase 1a: %d active person IDs fetched from roster source (%.1fs)",
+        len(current_person_ids),
         _elapsed(),
     )
 
-    # --- Phase 2: sport-specific enrichment (headshots, external IDs) ---
+    roster_ref = db.collection(_SYSTEM_COLLECTION).document("roster_state")
+    roster_doc = roster_ref.get()
+    prior_ids: frozenset[int] = frozenset(roster_doc.to_dict().get("person_ids", []) if roster_doc.exists else [])
+
+    added_ids = current_person_ids - prior_ids
+    removed_ids = prior_ids - current_person_ids
+
+    logger.info(
+        "Phase 1b: +%d added, -%d removed vs prior roster (%.1fs)",
+        len(added_ids),
+        len(removed_ids),
+        _elapsed(),
+    )
+
+    # Fetch player details only for newly added players.
+    new_player_details: list[dict[str, Any]] = []
+    if added_ids:
+        new_player_details = stats_provider.fetch_player_details(added_ids, logger)
+        logger.info(
+            "Phase 1c: %d/%d new player profiles fetched (%.1fs)",
+            len(new_player_details),
+            len(added_ids),
+            _elapsed(),
+        )
+
+    # Persist updated roster state.
+    roster_ref.set({"person_ids": sorted(current_person_ids), "updated_at": datetime.now(timezone.utc).isoformat()})
+
+    # Load all currently-active player docs from Firestore for the trend/hash checks below.
     existing_docs: dict[str, dict[str, Any]] = {
         doc.id: (doc.to_dict() or {})
         for doc in players_ref.select(
             [
-                "mlb_person_id",
                 "trend_updated_at",
                 "avg_fantasy_score",
                 "trend_games",
@@ -351,6 +383,27 @@ def fetch_and_store_players(
             ]
         ).stream()
     }
+
+    # all_players is every player the pipeline should process this run:
+    #   - new arrivals: use fetched profile dicts
+    #   - returning players: reconstruct minimal dict from existing Firestore data
+    returning_ids = current_person_ids - added_ids
+    all_players: list[dict[str, Any]] = list(new_player_details)
+    for pid in returning_ids:
+        doc_data = existing_docs.get(str(pid), {})
+        all_players.append({**doc_data, "person_id": pid})
+
+    logger.info(
+        "Phase 1 complete: %d total active players (%d new, %d returning) (%.1fs)",
+        len(all_players),
+        len(new_player_details),
+        len(returning_ids),
+        _elapsed(),
+    )
+
+    # --- Phase 2: sport-specific enrichment (headshots, external IDs) ---
+    # enrich_players is a no-op for providers that supply profile data directly
+    # (e.g. MLB Stats API). Kept for providers that need secondary ID matching.
     _hooks.enrich_players(all_players, existing_docs, db, logger)
     logger.info("Phase 2 complete: player enrichment done (%.1fs)", _elapsed())
 
@@ -358,8 +411,8 @@ def fetch_and_store_players(
     stale_threshold = datetime.now(timezone.utc) - timedelta(hours=trend_stale_hours)
     existing_timestamps: dict[str, str] = {pid: d.get("trend_updated_at", "") for pid, d in existing_docs.items()}
 
-    def _is_stale(player_id: int) -> bool:
-        ts = existing_timestamps.get(str(player_id), "")
+    def _is_stale(person_id: int) -> bool:
+        ts = existing_timestamps.get(str(person_id), "")
         if not ts:
             return True
         try:
@@ -370,7 +423,7 @@ def fetch_and_store_players(
         except ValueError:
             return True
 
-    stale_players = [p for p in all_players if _is_stale(p["id"])]
+    stale_players = [p for p in all_players if _is_stale(p["person_id"])]
     fresh_count = len(all_players) - len(stale_players)
     logger.info(
         "Phase 3 complete: %d stale, %d fresh (%.1fs)",
@@ -398,7 +451,7 @@ def fetch_and_store_players(
             **{platform_cfg["tier_field"]: "bottom_feeder" for platform_cfg in PLATFORMS.values()},
         }
 
-    stale_ids = {p["id"] for p in stale_players}
+    stale_ids = {p["person_id"] for p in stale_players}
 
     # Resolve trend fields + hash fields (needed for Phase 6a hash check and Phase 6b strip)
     _trend_fields: frozenset[str] | None = None
@@ -418,12 +471,12 @@ def fetch_and_store_players(
     if _hooks.fetch_trends is not None:
         for chunk_start in range(0, len(stale_players), checkpoint_batch_size):
             chunk = stale_players[chunk_start : chunk_start + checkpoint_batch_size]
-            chunk_ids = [p["id"] for p in chunk]
+            chunk_ids = [p["person_id"] for p in chunk]
             try:
                 trends, chunk_raw_rows = _hooks.fetch_trends(chunk_ids, api_key)
                 all_raw_rows.extend(chunk_raw_rows)
             except TrendFetchAbortedError as exc:
-                skipped_ids = {p["id"] for p in stale_players} - set(all_trend_data.keys())
+                skipped_ids = {p["person_id"] for p in stale_players} - set(all_trend_data.keys())
                 logger.warning(
                     "Trend fetch aborted (%s). %d/%d stale players fetched; %d players skipped and flagged with trend_fetch_skipped_at.",
                     exc,
@@ -433,12 +486,12 @@ def fetch_and_store_players(
                 )
                 skipped_at = datetime.now(timezone.utc).isoformat()
                 for batch_start in range(0, len(stale_players), 500):
-                    skipped_chunk = [p for p in stale_players[batch_start : batch_start + 500] if p["id"] in skipped_ids]
+                    skipped_chunk = [p for p in stale_players[batch_start : batch_start + 500] if p["person_id"] in skipped_ids]
                     if skipped_chunk:
                         batch = db.batch()
                         for player in skipped_chunk:
                             batch.set(
-                                players_ref.document(str(player["id"])),
+                                players_ref.document(str(player["person_id"])),
                                 {"trend_fetch_skipped_at": skipped_at},
                                 merge=True,
                             )
@@ -456,7 +509,7 @@ def fetch_and_store_players(
             )
 
     for player in stale_players:
-        player.update(all_trend_data.get(player["id"], default_trend))
+        player.update(all_trend_data.get(player["person_id"], default_trend))
         updated_at = player.get("trend_updated_at")
         if updated_at:
             try:
@@ -472,20 +525,20 @@ def fetch_and_store_players(
 
     # --- Phase 4c: fetch season averages + advanced metrics ---
     advanced_metrics_by_player: dict[int, dict[str, Any]] = {}
-    stale_ids_list = [p["id"] for p in stale_players]
+    stale_ids_list = [p["person_id"] for p in stale_players]
     if stale_ids_list:
         try:
             season_data, adv_data = _hooks.fetch_season_and_advanced(stale_ids_list, api_key, logger)
             advanced_metrics_by_player.update(adv_data)
             for player in stale_players:
-                avgs = season_data.get(player["id"])
+                avgs = season_data.get(player["person_id"])
                 if avgs:
                     player.update(avgs)
-                adv = advanced_metrics_by_player.get(player["id"])
+                adv = advanced_metrics_by_player.get(player["person_id"])
                 if adv:
                     player.update(adv)
-                    if player["id"] in all_trend_data:
-                        all_trend_data[player["id"]].update(adv)
+                    if player["person_id"] in all_trend_data:
+                        all_trend_data[player["person_id"]].update(adv)
             logger.info(
                 "Phase 4c complete: season stats merged for %d players (%.1fs)",
                 len(season_data),
@@ -578,13 +631,13 @@ def fetch_and_store_players(
         for player in chunk:
             if _hash_fields is not None:
                 new_hash = _trend_hash(player, _hash_fields)
-                existing_hash = existing_docs.get(str(player["id"]), {}).get("trend_hash")
-                existing_tier = existing_docs.get(str(player["id"]), {}).get("player_tier")
+                existing_hash = existing_docs.get(str(player["person_id"]), {}).get("trend_hash")
+                existing_tier = existing_docs.get(str(player["person_id"]), {}).get("player_tier")
                 if new_hash == existing_hash and player.get("player_tier") == existing_tier:
                     total_skipped_unchanged += 1
                     continue
                 player["trend_hash"] = new_hash
-            doc_ref = players_ref.document(str(player["id"]))
+            doc_ref = players_ref.document(str(player["person_id"]))
             batch.set(doc_ref, player, merge=True)
             batch_count += 1
         if batch_count:
@@ -599,7 +652,7 @@ def fetch_and_store_players(
         )
 
     # --- Phase 6b: write fresh players (base fields + updated player_tier only) ---
-    fresh_players = [p for p in all_players if p["id"] not in stale_ids]
+    fresh_players = [p for p in all_players if p["person_id"] not in stale_ids]
     for chunk_start in range(0, len(fresh_players), 500):
         chunk = fresh_players[chunk_start : chunk_start + 500]
         batch = db.batch()
@@ -608,7 +661,7 @@ def fetch_and_store_players(
                 for f in _trend_fields:
                     player.pop(f, None)
             player["trend_updated_at"] = datetime.now(timezone.utc).isoformat()
-            doc_ref = players_ref.document(str(player["id"]))
+            doc_ref = players_ref.document(str(player["person_id"]))
             batch.set(doc_ref, player, merge=True)
         batch.commit()
         total_written += len(chunk)
@@ -621,7 +674,7 @@ def fetch_and_store_players(
     )
 
     # --- Phase 7: mark players no longer in active set as inactive ---
-    active_ids = {str(p["id"]) for p in all_players}
+    active_ids = {str(p["person_id"]) for p in all_players}
     departed_ids = [pid for pid in existing_docs if pid not in active_ids and existing_docs[pid].get("is_active") is not False]
     if departed_ids:
         logger.info(
