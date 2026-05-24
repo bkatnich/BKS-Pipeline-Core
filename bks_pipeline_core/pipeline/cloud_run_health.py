@@ -34,7 +34,6 @@ EXPECTED_SERVICES: frozenset[str] = frozenset(
         "get-playoff-bracket",
         "get-projections",
         "get-subscription-status",
-        "get-today-games",
         "get-user-preferences",
         "google-rtdn-notification",
         "health",
