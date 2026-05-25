@@ -39,7 +39,6 @@ from google.protobuf import timestamp_pb2  # type: ignore[import-untyped]
 from bks_pipeline_core.pipeline.defense import compute_team_defense
 from bks_pipeline_core.pipeline.games import write_games
 from bks_pipeline_core.pipeline.league_state import get_league_state
-from bks_pipeline_core.pipeline.platforms import PLATFORMS
 from bks_pipeline_core.pipeline.playoffs import get_all_series
 from bks_pipeline_core.pipeline.vegas import compute_vegas_signals
 from bks_pipeline_core.sport_config import get_active_config
@@ -193,37 +192,16 @@ _UNIVERSAL_TREND_FIELDS: frozenset[str] = frozenset(
         "avg_fantasy_score",
         "consistency_score",
         "trend_updated_at",
-        "surging_category_count",
-        "is_surging",
         "trend_acceleration",
-        "usage_efficiency_signal",
         "confidence_score",
         "hot_streak",
         "cold_streak",
         "streak_length",
         "is_role_change",
-        "role_change_minutes_delta",
-        "surge_delta",
-        "surge_delta_pct",
         "avg_fantasy_score_home",
         "avg_fantasy_score_away",
-        "avg_fantasy_score_home_fd",
-        "avg_fantasy_score_away_fd",
-        "avg_fantasy_score_fd",
-        "trend_score_fd",
-        "trend_direction_fd",
-        "consistency_score_fd",
-        "confidence_score_fd",
-        "trend_acceleration_fd",
-        "hot_streak_fd",
-        "cold_streak_fd",
-        "streak_length_fd",
-        "surge_delta_fd",
-        "surge_delta_pct_fd",
-        "is_surging_fd",
         "recent_game_scores",
         "recent_game_minutes",
-        "trend_staleness_hours",
     }
 )
 
@@ -237,19 +215,11 @@ _UNIVERSAL_HASH_FIELDS: tuple[str, ...] = (
     "avg_fantasy_score_away",
     "consistency_score",
     "confidence_score",
-    "surging_category_count",
-    "is_surging",
     "trend_acceleration",
-    "usage_efficiency_signal",
     "hot_streak",
     "cold_streak",
     "streak_length",
     "is_role_change",
-    "role_change_minutes_delta",
-    "surge_delta_pct",
-    "trend_score_fd",
-    "surge_delta_pct_fd",
-    "is_surging_fd",
     "recent_game_scores",
     "recent_game_minutes",
 )
@@ -605,18 +575,6 @@ def fetch_and_store_players(
 
     for player in stale_players:
         player.update(all_trend_data.get(player["person_id"], default_trend))
-        updated_at = player.get("trend_updated_at")
-        if updated_at:
-            try:
-                dt = datetime.fromisoformat(updated_at)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                staleness = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
-                player["trend_staleness_hours"] = round(staleness, 1)
-            except (ValueError, TypeError):
-                player["trend_staleness_hours"] = None
-        else:
-            player["trend_staleness_hours"] = None
 
     # --- Phase 4c: fetch season averages + advanced metrics ---
     advanced_metrics_by_player: dict[int, dict[str, Any]] = {}

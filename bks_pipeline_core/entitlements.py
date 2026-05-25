@@ -77,9 +77,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     "hot_streak",
     "cold_streak",
     "is_role_change",
-    "is_surging",
-    "surge_delta",
-    "surge_delta_pct",
     # Per-stat trends
     "trend_pts",
     "trend_reb",
@@ -133,7 +130,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     "is_return_game_window",
     # Recent game history
     "recent_game_scores",
-    "recent_game_scores_fd",
     "recent_game_minutes",
     "recent_fg3_pct",
     # Advanced efficiency

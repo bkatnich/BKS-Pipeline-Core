@@ -20,7 +20,7 @@ import logging
 import math
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Protocol
 
@@ -30,7 +30,6 @@ from bks_pipeline_core.pipeline.scoring import (
     compute_streak,
     compute_trend_acceleration,
     fantasy_score,
-    fantasy_score_fd,
     parse_minutes,
 )
 from bks_pipeline_core.sport_config import get_active_config
@@ -90,22 +89,6 @@ class TrendsConfig:
 # ---------------------------------------------------------------------------
 
 
-class _ComputeUsageEfficiencyHook(Protocol):
-    """Return a usage_efficiency_signal string for a player's trend dict.
-
-    Called with the per-category trend slopes (cat_trends) after all generic
-    trend fields have been computed. Must return one of:
-      "neutral", "expanding_efficiently", "volume_inflation", "efficient_usage"
-    or any sport-defined string value.
-    """
-
-    def __call__(self, cat_trends: dict[str, float | None]) -> str: ...
-
-
-def _default_usage_efficiency(cat_trends: dict[str, float | None]) -> str:
-    return "neutral"
-
-
 @dataclass
 class SportTrendHooks:
     """Sport-specific dependency injection for fetch_trends.
@@ -114,11 +97,6 @@ class SportTrendHooks:
     works without any hooks — backward-compatible with sports that don't need
     customisation.
     """
-
-    # Returns the usage_efficiency_signal string from per-category trend slopes.
-    compute_usage_efficiency: _ComputeUsageEfficiencyHook = field(
-        default_factory=lambda: _default_usage_efficiency
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -205,17 +183,12 @@ def _empty_trend(
     stat_categories: list[tuple[str, str, bool]],
     now_iso: str,
     is_rc: bool,
-    rc_delta: float | None,
     game_count: int,
     avg_minutes: float | None = None,
     avg_fantasy_score: float | None = None,
     trend_score: float | None = None,
-    avg_fantasy_score_fd: float | None = None,
-    trend_score_fd: float | None = None,
     avg_fantasy_score_home: float | None = None,
     avg_fantasy_score_away: float | None = None,
-    avg_fantasy_score_home_fd: float | None = None,
-    avg_fantasy_score_away_fd: float | None = None,
 ) -> dict[str, Any]:
     """Return a zeroed-out trend field dict for players with insufficient data."""
     cat_trends = {key: None for key, _, _ in stat_categories}
@@ -227,12 +200,7 @@ def _empty_trend(
         "avg_fantasy_score": avg_fantasy_score,
         "consistency_score": None,
         "trend_updated_at": now_iso,
-        "surge_delta": None,
-        "surge_delta_pct": None,
-        "is_surging": False,
-        "surging_category_count": None,
         "trend_acceleration": None,
-        "usage_efficiency_signal": "neutral",
         "confidence_score": None,
         "hot_streak": 0,
         "cold_streak": 0,
@@ -240,23 +208,8 @@ def _empty_trend(
         "days_since_return": None,
         "is_return_game_window": False,
         "is_role_change": is_rc,
-        "role_change_minutes_delta": rc_delta,
-        "avg_fantasy_score_fd": avg_fantasy_score_fd,
-        "trend_score_fd": trend_score_fd,
-        "trend_direction_fd": "neutral",
-        "consistency_score_fd": None,
-        "confidence_score_fd": None,
-        "trend_acceleration_fd": None,
-        "hot_streak_fd": 0,
-        "cold_streak_fd": 0,
-        "streak_length_fd": 0,
-        "surge_delta_fd": None,
-        "surge_delta_pct_fd": None,
-        "is_surging_fd": False,
         "avg_fantasy_score_home": avg_fantasy_score_home,
         "avg_fantasy_score_away": avg_fantasy_score_away,
-        "avg_fantasy_score_home_fd": avg_fantasy_score_home_fd,
-        "avg_fantasy_score_away_fd": avg_fantasy_score_away_fd,
         "recent_game_scores": [],
         "recent_game_minutes": [],
         **cat_trends,
@@ -267,10 +220,8 @@ def _compute_trend_fields(
     stats_by_player: dict[int, list[dict[str, Any]]],
     player_ids: list[int],
     trend_window: int = 5,
-    hooks: SportTrendHooks | None = None,
 ) -> dict[int, dict[str, Any]]:
     """Pure computation: given pre-fetched, DNP-filtered stats, return trend field dicts."""
-    _hooks = hooks or SportTrendHooks()
     cfg = get_active_config()
     stat_categories = cfg.stat_categories
     per_minute_base = cfg.per_minute_base
@@ -287,8 +238,8 @@ def _compute_trend_fields(
         )
 
         if game_count < 3:
-            is_rc, rc_delta = _role_change(all_player_rows, trend_window)
-            t = _empty_trend(stat_categories, now_iso, is_rc, rc_delta, game_count)
+            is_rc, _rc_delta = _role_change(all_player_rows, trend_window)
+            t = _empty_trend(stat_categories, now_iso, is_rc, game_count)
             t["playoff_games_played"] = playoff_games_played
             trends[pid] = t
             continue
@@ -306,26 +257,19 @@ def _compute_trend_fields(
         away_games = [s for s in all_games if not _is_home_game(s)]
         avg_fantasy_score_home = _venue_avg(home_games, fantasy_score)
         avg_fantasy_score_away = _venue_avg(away_games, fantasy_score)
-        avg_fantasy_score_home_fd = _venue_avg(home_games, fantasy_score_fd)
-        avg_fantasy_score_away_fd = _venue_avg(away_games, fantasy_score_fd)
 
         if mean_score == 0:
-            is_rc, rc_delta = _role_change(all_player_rows, trend_window)
+            is_rc, _rc_delta = _role_change(all_player_rows, trend_window)
             t = _empty_trend(
                 stat_categories,
                 now_iso,
                 is_rc,
-                rc_delta,
                 game_count,
                 avg_minutes=avg_minutes,
                 avg_fantasy_score=0.0,
                 trend_score=0.0,
-                avg_fantasy_score_fd=0.0,
-                trend_score_fd=0.0,
                 avg_fantasy_score_home=avg_fantasy_score_home,
                 avg_fantasy_score_away=avg_fantasy_score_away,
-                avg_fantasy_score_home_fd=avg_fantasy_score_home_fd,
-                avg_fantasy_score_away_fd=avg_fantasy_score_away_fd,
             )
             t["playoff_games_played"] = playoff_games_played
             trends[pid] = t
@@ -354,79 +298,7 @@ def _compute_trend_fields(
 
         consistency = _consistency_score(scores)
 
-        baseline_games = all_player_rows[:-trend_window]
-        if len(baseline_games) >= 3:
-            baseline_raw = [
-                fantasy_score(s, parse_minutes(s.get("min"))) * (parse_minutes(s.get("min")) / per_minute_base)
-                for s in baseline_games
-            ]
-            baseline_avg = sum(baseline_raw) / len(baseline_raw)
-            surge_delta = round(avg_fantasy_score - baseline_avg, 2)
-            surge_delta_pct = round(surge_delta / baseline_avg, 4) if baseline_avg > 0 else None
-            baseline_std = (sum((x - baseline_avg) ** 2 for x in baseline_raw) / len(baseline_raw)) ** 0.5
-            baseline_cv = baseline_std / baseline_avg if baseline_avg > 0 else float("inf")
-            surge_threshold = 0.20 if baseline_cv > 0.40 else 0.15
-            is_surging = surge_delta_pct is not None and surge_delta_pct >= surge_threshold
-        else:
-            surge_delta = None
-            surge_delta_pct = None
-            is_surging = False
-
         trend_acceleration = compute_trend_acceleration(raw_scores, mean_raw)
-
-        scores_fd = [fantasy_score_fd(s, m) for s, m in zip(recent, minutes_series)]
-        mean_score_fd = sum(scores_fd) / len(scores_fd)
-        raw_scores_fd = [s * (m / per_minute_base) for s, m in zip(scores_fd, minutes_series)]
-        avg_fantasy_score_fd = round(sum(raw_scores_fd) / len(raw_scores_fd), 2)
-
-        if mean_score_fd != 0:
-            mean_raw_fd = sum(raw_scores_fd) / len(raw_scores_fd)
-            slope_fd = compute_slope(raw_scores_fd)
-            normalised_fd = slope_fd / mean_raw_fd if mean_raw_fd > 0 else 0.0
-            trend_score_fd = round(normalised_fd, 4)
-            if normalised_fd > 0.05:
-                trend_direction_fd = "up"
-            elif normalised_fd < -0.05:
-                trend_direction_fd = "down"
-            else:
-                trend_direction_fd = "neutral"
-            consistency_score_fd = _consistency_score(scores_fd)
-            if consistency_score_fd is not None:
-                _raw_conf_fd = 0.6 * normalised_fd + 0.4 * (consistency_score_fd - 0.5)
-                confidence_score_fd = round(1.0 / (1.0 + math.exp(-8.0 * _raw_conf_fd)), 4)
-            else:
-                confidence_score_fd = None
-            trend_acceleration_fd = compute_trend_acceleration(raw_scores_fd, mean_raw_fd)
-        else:
-            trend_score_fd = 0.0
-            trend_direction_fd = "neutral"
-            consistency_score_fd = None
-            confidence_score_fd = None
-            trend_acceleration_fd = None
-
-        streak_fd, streak_length_fd = compute_streak(raw_scores_fd)
-        hot_streak_fd = streak_fd if streak_fd > 0 else 0
-        cold_streak_fd = streak_fd if streak_fd < 0 else 0
-
-        baseline_games_fd = all_player_rows[:-trend_window]
-        if len(baseline_games_fd) >= 3:
-            baseline_raw_fd = [
-                fantasy_score_fd(s, parse_minutes(s.get("min"))) * (parse_minutes(s.get("min")) / per_minute_base)
-                for s in baseline_games_fd
-            ]
-            baseline_avg_fd = sum(baseline_raw_fd) / len(baseline_raw_fd)
-            surge_delta_fd = round(avg_fantasy_score_fd - baseline_avg_fd, 2)
-            surge_delta_pct_fd = round(surge_delta_fd / baseline_avg_fd, 4) if baseline_avg_fd > 0 else None
-            baseline_std_fd = (sum((x - baseline_avg_fd) ** 2 for x in baseline_raw_fd) / len(baseline_raw_fd)) ** 0.5
-            baseline_cv_fd = baseline_std_fd / baseline_avg_fd if baseline_avg_fd > 0 else float("inf")
-            surge_threshold_fd = 0.20 if baseline_cv_fd > 0.40 else 0.15
-            is_surging_fd = surge_delta_pct_fd is not None and surge_delta_pct_fd >= surge_threshold_fd
-        else:
-            surge_delta_fd = None
-            surge_delta_pct_fd = None
-            is_surging_fd = False
-
-        usage_efficiency_signal = _hooks.compute_usage_efficiency(cat_trends)
 
         if consistency is not None:
             _raw_conf = 0.6 * normalised + 0.4 * (consistency - 0.5)
@@ -438,9 +310,7 @@ def _compute_trend_fields(
         hot_streak = streak if streak > 0 else 0
         cold_streak = streak if streak < 0 else 0
 
-        is_rc, rc_delta = _role_change(all_player_rows, trend_window)
-
-        surging_category_count = sum(1 for v in cat_trends.values() if v is not None and v >= 0.15)
+        is_rc, _rc_delta = _role_change(all_player_rows, trend_window)
 
         trends[pid] = {
             "trend_direction": direction,
@@ -450,12 +320,7 @@ def _compute_trend_fields(
             "avg_fantasy_score": avg_fantasy_score,
             "consistency_score": consistency,
             "trend_updated_at": now_iso,
-            "surge_delta": surge_delta,
-            "surge_delta_pct": surge_delta_pct,
-            "is_surging": is_surging,
-            "surging_category_count": surging_category_count,
             "trend_acceleration": trend_acceleration,
-            "usage_efficiency_signal": usage_efficiency_signal,
             "confidence_score": confidence_score,
             "hot_streak": hot_streak,
             "cold_streak": cold_streak,
@@ -463,25 +328,9 @@ def _compute_trend_fields(
             "days_since_return": None,
             "is_return_game_window": False,
             "is_role_change": is_rc,
-            "role_change_minutes_delta": rc_delta,
-            "avg_fantasy_score_fd": avg_fantasy_score_fd,
-            "trend_score_fd": trend_score_fd,
-            "trend_direction_fd": trend_direction_fd,
-            "consistency_score_fd": consistency_score_fd,
-            "confidence_score_fd": confidence_score_fd,
-            "trend_acceleration_fd": trend_acceleration_fd,
-            "hot_streak_fd": hot_streak_fd,
-            "cold_streak_fd": cold_streak_fd,
-            "streak_length_fd": streak_length_fd,
-            "surge_delta_fd": surge_delta_fd,
-            "surge_delta_pct_fd": surge_delta_pct_fd,
-            "is_surging_fd": is_surging_fd,
             "avg_fantasy_score_home": avg_fantasy_score_home,
             "avg_fantasy_score_away": avg_fantasy_score_away,
-            "avg_fantasy_score_home_fd": avg_fantasy_score_home_fd,
-            "avg_fantasy_score_away_fd": avg_fantasy_score_away_fd,
             "recent_game_scores": [round(s, 2) for s in raw_scores],
-            "recent_game_scores_fd": [round(s, 2) for s in raw_scores_fd],
             "recent_game_minutes": [round(m, 1) for m in minutes_series],
             "playoff_games_played": playoff_games_played,
             **cat_trends,
@@ -573,7 +422,7 @@ def fetch_trends(
         total - skipped,
         total,
     )
-    return _compute_trend_fields(stats_by_player, player_ids, cfg.trend_window, _hooks), all_raw_rows
+    return _compute_trend_fields(stats_by_player, player_ids, cfg.trend_window), all_raw_rows
 
 
 def fetch_season_stats(

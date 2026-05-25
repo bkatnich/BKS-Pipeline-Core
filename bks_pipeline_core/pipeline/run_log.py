@@ -33,6 +33,7 @@ STAGE_MANIFEST: list[tuple[str, str, str, str]] = [
     ("today", "sync_prop_lines", "Sync Prop Lines", "12:00 PM"),
     ("today", "check_pipeline_morning", "Morning Health Check", "7:30 AM"),
     ("today", "snapshot_projections_daily", "Projections Snapshot", "6:01 AM"),
+    ("today", "snapshot_predictions_morning", "Morning Predictions Snapshot", "6:00 AM"),
     # Predictions — evening snapshot
     ("predictions", "snapshot_predictions_early", "Early Prediction Snapshot", "5:00 PM"),
     ("predictions", "snapshot_predictions", "Final Prediction Snapshot", "7:00 PM"),
