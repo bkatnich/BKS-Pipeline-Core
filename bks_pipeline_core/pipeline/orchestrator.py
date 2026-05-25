@@ -118,6 +118,10 @@ class _FetchSeasonAndAdvancedHook(Protocol):
 
     Returns (season_data, advanced_metrics) where both are {player_id: {field: value}}.
     Return ({}, {}) to skip.
+
+    existing_docs is the full {str(person_id): doc} map already loaded from Firestore —
+    hooks may use it to pre-filter stale_ids (e.g. skip players with no ABs) without
+    an extra round-trip.
     """
 
     def __call__(
@@ -125,6 +129,7 @@ class _FetchSeasonAndAdvancedHook(Protocol):
         stale_ids: list[int],
         api_key: str,
         logger: logging.Logger,
+        existing_docs: dict[str, dict[str, Any]],
     ) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]: ...
 
 
@@ -155,6 +160,7 @@ def _noop_fetch_season_and_advanced(
     stale_ids: list[int],
     api_key: str,
     logger: logging.Logger,
+    existing_docs: dict[str, dict[str, Any]],
 ) -> tuple[dict[int, dict[str, Any]], dict[int, dict[str, Any]]]:
     return {}, {}
 
@@ -583,7 +589,7 @@ def fetch_and_store_players(
     stale_ids_list = list(all_trend_data.keys()) if all_trend_data else [p["person_id"] for p in stale_players]
     if stale_ids_list:
         try:
-            season_data, adv_data = _hooks.fetch_season_and_advanced(stale_ids_list, api_key, logger)
+            season_data, adv_data = _hooks.fetch_season_and_advanced(stale_ids_list, api_key, logger, existing_docs)
             advanced_metrics_by_player.update(adv_data)
             for player in stale_players:
                 avgs = season_data.get(player["person_id"])
