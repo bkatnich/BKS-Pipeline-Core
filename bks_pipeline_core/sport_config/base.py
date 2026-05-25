@@ -7,7 +7,7 @@ target a different sport without changing any pipeline code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -192,3 +192,13 @@ class SportConfig:
     # display_name: label shown in the accuracy report table (e.g. "Hits", "HR")
     # None = use the sport-agnostic default (basketball alias names).
     stat_fields: list[tuple[str, str, str]] | None = None
+
+    # Sport-specific trend field names written per player, beyond the universal set.
+    # These are merged into the full trend_fields frozenset by build_trend_fields().
+    # Example for MLB: frozenset({"season_hits_pg", "season_avg", "woba_proxy", ...})
+    trend_field_extras: frozenset[str] = field(default_factory=frozenset)
+
+    # Subset of trend_field_extras (and/or universal fields) to include in the
+    # change-detection hash, beyond the universal hash fields.
+    # Example for MLB: ("season_avg", "season_obp", "season_ops", "woba_proxy", ...)
+    trend_hash_field_extras: tuple[str, ...] = ()

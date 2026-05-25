@@ -11,6 +11,8 @@ Usage in a sport project's pipeline/orchestrator.py:
         OrchestratorConfig,
         PlayerSyncHooks,
         GameSyncHooks,
+        build_trend_fields,
+        build_hash_fields,
         fetch_and_store_players as _core_fetch_and_store_players,
         fetch_and_store_odds as _core_fetch_and_store_odds,
         fetch_and_store_today_games,
@@ -42,6 +44,7 @@ from bks_pipeline_core.pipeline.playoffs import get_all_series
 from bks_pipeline_core.pipeline.tiers import assign_percentile_tiers
 from bks_pipeline_core.pipeline.vegas import compute_vegas_signals
 from bks_pipeline_core.sport_config import get_active_config
+from bks_pipeline_core.sport_config.base import SportConfig
 from bks_pipeline_core.utils.exceptions import TrendFetchAbortedError
 
 logger = logging.getLogger(__name__)
@@ -176,6 +179,105 @@ class _GameTotalsHook(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+# ---------------------------------------------------------------------------
+# Generic trend field sets — sport-agnostic fields written by all sports.
+# Sport-specific extras are declared on SportConfig.trend_field_extras /
+# trend_hash_field_extras and merged in by build_trend_fields / build_hash_fields.
+# ---------------------------------------------------------------------------
+
+_UNIVERSAL_TREND_FIELDS: frozenset[str] = frozenset(
+    {
+        "trend_direction",
+        "trend_score",
+        "trend_games",
+        "avg_minutes",
+        "avg_fantasy_score",
+        "consistency_score",
+        "trend_updated_at",
+        "surging_category_count",
+        "is_surging",
+        "trend_acceleration",
+        "usage_efficiency_signal",
+        "confidence_score",
+        "hot_streak",
+        "cold_streak",
+        "streak_length",
+        "is_role_change",
+        "role_change_minutes_delta",
+        "surge_delta",
+        "surge_delta_pct",
+        "avg_fantasy_score_home",
+        "avg_fantasy_score_away",
+        "avg_fantasy_score_home_fd",
+        "avg_fantasy_score_away_fd",
+        "avg_fantasy_score_fd",
+        "trend_score_fd",
+        "trend_direction_fd",
+        "consistency_score_fd",
+        "confidence_score_fd",
+        "trend_acceleration_fd",
+        "hot_streak_fd",
+        "cold_streak_fd",
+        "streak_length_fd",
+        "surge_delta_fd",
+        "surge_delta_pct_fd",
+        "is_surging_fd",
+        "recent_game_scores",
+        "recent_game_minutes",
+        "trend_staleness_hours",
+    }
+)
+
+_UNIVERSAL_HASH_FIELDS: tuple[str, ...] = (
+    "trend_direction",
+    "trend_score",
+    "trend_games",
+    "avg_minutes",
+    "avg_fantasy_score",
+    "avg_fantasy_score_home",
+    "avg_fantasy_score_away",
+    "consistency_score",
+    "confidence_score",
+    "surging_category_count",
+    "is_surging",
+    "trend_acceleration",
+    "usage_efficiency_signal",
+    "hot_streak",
+    "cold_streak",
+    "streak_length",
+    "is_role_change",
+    "role_change_minutes_delta",
+    "surge_delta_pct",
+    "trend_score_fd",
+    "surge_delta_pct_fd",
+    "is_surging_fd",
+    "recent_game_scores",
+    "recent_game_minutes",
+)
+
+
+def build_trend_fields(cfg: SportConfig) -> frozenset[str]:
+    """Return the full set of trend field names for the given sport config.
+
+    Combines universal trend fields, per-platform tier fields, stat category
+    output keys, and sport-specific extras from cfg.trend_field_extras.
+    """
+    category_keys = frozenset(key for key, _, _ in cfg.stat_categories)
+    platform_tier_fields = frozenset(pcfg["tier_field"] for pcfg in PLATFORMS.values())
+    return _UNIVERSAL_TREND_FIELDS | category_keys | platform_tier_fields | cfg.trend_field_extras
+
+
+def build_hash_fields(cfg: SportConfig) -> tuple[str, ...]:
+    """Return the ordered tuple of field names used for change-detection hashing.
+
+    Combines universal hash fields, per-platform tier fields, stat category
+    output keys, and sport-specific extras from cfg.trend_hash_field_extras.
+    """
+    category_keys = tuple(key for key, _, _ in cfg.stat_categories)
+    platform_tier_fields = tuple(pcfg["tier_field"] for pcfg in PLATFORMS.values())
+    return _UNIVERSAL_HASH_FIELDS + platform_tier_fields + category_keys + cfg.trend_hash_field_extras
+
+
 @dataclass
 class PlayerSyncHooks:
     """Sport-specific dependency injection for fetch_and_store_players.
@@ -189,14 +291,13 @@ class PlayerSyncHooks:
     fetch_season_and_advanced: _FetchSeasonAndAdvancedHook = field(default_factory=lambda: _noop_fetch_season_and_advanced)
     fetch_trends: _FetchTrendsHook | None = None
 
-    # Returns the frozenset of all trend field names written per player.
-    # Used in Phase 6b to strip trend fields from fresh players.
-    # Must be provided when fetching trends; None is only valid if fetch_trends is None.
-    build_trend_fields: Any | None = None  # Callable[[], frozenset[str]] | None
+    # Returns the frozenset of all trend field names written per player (cfg-aware).
+    # Defaults to the generic build_trend_fields which reads cfg.trend_field_extras.
+    build_trend_fields: Any = field(default_factory=lambda: build_trend_fields)  # Callable[[SportConfig], frozenset[str]]
 
-    # Returns the tuple of field names included in the change-detection hash.
-    # Must be provided when fetching trends; None is only valid if fetch_trends is None.
-    build_hash_fields: Any | None = None  # Callable[[], tuple[str, ...]] | None
+    # Returns the tuple of field names included in the change-detection hash (cfg-aware).
+    # Defaults to the generic build_hash_fields which reads cfg.trend_hash_field_extras.
+    build_hash_fields: Any = field(default_factory=lambda: build_hash_fields)  # Callable[[SportConfig], tuple[str, ...]]
 
     # Returns the sport-specific default trend dict (for players with no trend data).
     # Callable[[SportConfig], dict[str, Any]]
@@ -458,8 +559,8 @@ def fetch_and_store_players(
     _hash_fields: tuple[str, ...] | None = None
 
     if _hooks.build_trend_fields is not None and _hooks.build_hash_fields is not None:
-        _trend_fields = _hooks.build_trend_fields()
-        _hash_fields = _hooks.build_hash_fields()
+        _trend_fields = _hooks.build_trend_fields(_sport_cfg)
+        _hash_fields = _hooks.build_hash_fields(_sport_cfg)
         assert set(_hash_fields) <= _trend_fields, (  # nosec B101
             f"_HASH_FIELDS contains fields not in _TREND_FIELDS: {set(_hash_fields) - _trend_fields}"
         )
