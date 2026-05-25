@@ -74,6 +74,7 @@ HOME_COURT_PATTERN = {"1": True, "2": True, "3": False, "4": False, "5": True, "
 # Internal helper
 # ---------------------------------------------------------------------------
 
+
 def _bracket() -> "BracketConfig":
     """Return the active sport's BracketConfig, raising clearly if absent."""
     bc = get_active_config().playoff_bracket
@@ -89,6 +90,7 @@ def _bracket() -> "BracketConfig":
 # ---------------------------------------------------------------------------
 # Series document construction
 # ---------------------------------------------------------------------------
+
 
 def series_id(conference: str, round_number: int, higher_seed: int | str, lower_seed: int | str) -> str:
     """Generate a deterministic series ID.
@@ -201,10 +203,7 @@ def record_game_result(
         doc["loser"] = doc["higher_seed_team"]
         doc["elimination_game_next"] = False
     else:
-        doc["elimination_game_next"] = (
-            doc["wins_higher_seed"] == threshold - 1
-            or doc["wins_lower_seed"] == threshold - 1
-        )
+        doc["elimination_game_next"] = doc["wins_higher_seed"] == threshold - 1 or doc["wins_lower_seed"] == threshold - 1
 
     doc["updated_at"] = datetime.now(timezone.utc).isoformat()
     return doc
@@ -213,6 +212,7 @@ def record_game_result(
 # ---------------------------------------------------------------------------
 # Bracket generation
 # ---------------------------------------------------------------------------
+
 
 def generate_first_round_matchups(
     seedings: dict[str, list[dict[str, Any]]],
@@ -240,7 +240,9 @@ def generate_first_round_matchups(
             if not high_team or not low_team:
                 logger.warning(
                     "Missing seed %d or %d for %s conference — skipping matchup",
-                    high, low, conference,
+                    high,
+                    low,
+                    conference,
                 )
                 continue
 
@@ -261,6 +263,7 @@ def generate_first_round_matchups(
 # ---------------------------------------------------------------------------
 # Bracket progression
 # ---------------------------------------------------------------------------
+
 
 def _r1_matchup_index(higher_seed: int, lower_seed: int) -> int | None:
     """Return the R1 matchup index for a seed pairing, or None if not found."""
@@ -293,10 +296,7 @@ def determine_next_round_series(
     if round_num >= bc.total_rounds:
         return None  # Championship complete — no next round
 
-    conf_series = [
-        s for s in all_series_for_year
-        if s.get("conference") == conference and s.get("round_number") == round_num
-    ]
+    conf_series = [s for s in all_series_for_year if s.get("conference") == conference and s.get("round_number") == round_num]
 
     if round_num == 1:
         my_idx = _r1_matchup_index(completed_series["higher_seed"], completed_series["lower_seed"])
@@ -328,11 +328,7 @@ def determine_next_round_series(
         return _create_next_round_from_feeders(completed_series, paired_series, conference, 2, year)
 
     elif round_num == 2:
-        other_r2 = [
-            s for s in conf_series
-            if s.get("series_id") != completed_series.get("series_id")
-            and s.get("status") == "completed"
-        ]
+        other_r2 = [s for s in conf_series if s.get("series_id") != completed_series.get("series_id") and s.get("status") == "completed"]
         if not other_r2:
             return None
 
@@ -345,10 +341,9 @@ def determine_next_round_series(
             return None
 
         other_conf_finals = [
-            s for s in all_series_for_year
-            if s.get("conference") == other_conf
-            and s.get("round_number") == bc.total_rounds - 1
-            and s.get("status") == "completed"
+            s
+            for s in all_series_for_year
+            if s.get("conference") == other_conf and s.get("round_number") == bc.total_rounds - 1 and s.get("status") == "completed"
         ]
         if not other_conf_finals:
             return None
@@ -422,6 +417,7 @@ def _winner_seed(series_doc: dict[str, Any]) -> int:
 # ---------------------------------------------------------------------------
 # Firestore I/O — safe to call without playoff_bracket configured
 # ---------------------------------------------------------------------------
+
 
 def advance_bracket(db: Any, year: int, completed_series: dict[str, Any]) -> dict[str, Any] | None:
     """Check if a completed series triggers bracket advancement and write the new series.

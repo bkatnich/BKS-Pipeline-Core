@@ -104,8 +104,8 @@ def vegas_multiplier(
 
 
 _LINE_MOVE_DEAD_ZONE = 1.0  # ±1.0 ITT pts = no signal
-_LINE_MOVE_SCALE = 0.01     # 1% per point of movement past dead zone
-_LINE_MOVE_MAX_MOVE = 5.0   # cap before scaling
+_LINE_MOVE_SCALE = 0.01  # 1% per point of movement past dead zone
+_LINE_MOVE_MAX_MOVE = 5.0  # cap before scaling
 
 
 def line_movement_multiplier(
@@ -120,12 +120,7 @@ def line_movement_multiplier(
     Returns (multiplier, itt_movement, ou_movement, spread_movement).
     Returns (1.0, None, None, None) when open lines are unavailable.
     """
-    if (
-        not signals
-        or not signals_open
-        or team_abbr not in signals
-        or team_abbr not in signals_open
-    ):
+    if not signals or not signals_open or team_abbr not in signals or team_abbr not in signals_open:
         return 1.0, None, None, None
 
     curr = signals[team_abbr]

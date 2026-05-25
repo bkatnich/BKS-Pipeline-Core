@@ -17,8 +17,8 @@ from bks_pipeline_core.pipeline.opportunity_primitives import _clamp
 
 _CLAMP_MIN = 0.90
 _CLAMP_MAX = 1.10
-_DEAD_ZONE = 0.05   # suppress within ±5% of median
-_LEVERAGE = 0.30    # 30% of price discount translates to multiplier deviation
+_DEAD_ZONE = 0.05  # suppress within ±5% of median
+_LEVERAGE = 0.30  # 30% of price discount translates to multiplier deviation
 
 
 def compute_position_salary_medians(players: list[dict[str, Any]]) -> dict[str, float]:

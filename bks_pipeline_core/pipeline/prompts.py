@@ -13,7 +13,7 @@ from bks_pipeline_core.sport_config import get_active_config
 # ---------------------------------------------------------------------------
 
 ANALYSIS_MODEL = "claude-sonnet-4-6"
-ANALYSIS_MAX_TOKENS_CACHED = 3000   # on-demand path (GET handler, cache miss)
+ANALYSIS_MAX_TOKENS_CACHED = 3000  # on-demand path (GET handler, cache miss)
 ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
@@ -114,25 +114,12 @@ def build_analysis_prompts(
         "tighten to 8-9 players, which concentrates opportunity. Look for non-stars absorbing "
         "meaningful touches — these are often the highest-edge plays on the slate."
         if "playoff" in round_description.lower()
-        else
-        "Give weight to pace-of-play edges and rest/back-to-back situations."
+        else "Give weight to pace-of-play edges and rest/back-to-back situations."
     )
 
-    salary_context_block = (
-        f"\n## Salary Context\n{salary_medians_text}\n"
-        if salary_medians_text
-        else ""
-    )
-    arena_context_block = (
-        f"\n## Arena Factors\n{arena_context_text}\n"
-        if arena_context_text
-        else ""
-    )
-    series_context_block = (
-        f"\n## Playoff Series Context\n{series_context_text}\n"
-        if series_context_text
-        else ""
-    )
+    salary_context_block = f"\n## Salary Context\n{salary_medians_text}\n" if salary_medians_text else ""
+    arena_context_block = f"\n## Arena Factors\n{arena_context_text}\n" if arena_context_text else ""
+    series_context_block = f"\n## Playoff Series Context\n{series_context_text}\n" if series_context_text else ""
     series_rules = (
         "- Playoff Series Context is provided. Factor in series score (desperation vs. close-out), "
         "game number, and per-player series trends when assessing upside. A team trailing 3-1 faces "
@@ -196,6 +183,7 @@ def build_analysis_prompts(
 # API client
 # ---------------------------------------------------------------------------
 
+
 def call_claude(
     *,
     api_key: str,
@@ -204,8 +192,14 @@ def call_claude(
     system: str,
     user: str,
     timeout: float = 90.0,
+    cache_system: bool = False,
 ) -> str:
     """Make a single-turn Claude API call and return the text response.
+
+    When cache_system=True the system prompt is tagged with cache_control
+    ephemeral so Anthropic caches it for up to 5 minutes. Use this for
+    background generation paths where the system prompt is static and large.
+    Leave False for translation calls (short, varied system prompts).
 
     Raises anthropic.APIError (and subclasses) on API-level failures.
     Raises RuntimeError if Claude returns no text block.
@@ -214,10 +208,17 @@ def call_claude(
     import anthropic  # lazy — cold-start cost paid only when actually called
 
     client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+
+    system_param: str | list[dict[str, object]]
+    if cache_system:
+        system_param = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    else:
+        system_param = system
+
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
-        system=system,
+        system=system_param,
         messages=[{"role": "user", "content": user}],
     )
     text = next((block.text for block in response.content if block.type == "text"), None)
@@ -229,6 +230,7 @@ def call_claude(
 # ---------------------------------------------------------------------------
 # Translation
 # ---------------------------------------------------------------------------
+
 
 def build_translation_prompt(full_lang_name: str, context: str = "") -> str:
     """Return the system prompt for the translation call.

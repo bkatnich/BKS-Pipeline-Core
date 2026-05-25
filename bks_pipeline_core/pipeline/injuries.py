@@ -75,6 +75,7 @@ def fetch_and_store_injuries(
 
     if fetch_page_fn is None:
         from api.sport_provider import fetch_injuries_page  # sport-specific lazy import
+
         fetch_page_fn = fetch_injuries_page
 
     cfg = get_active_config()
@@ -264,8 +265,9 @@ def fetch_and_store_injuries(
     )
 
     if changed_players and date_str:
-        from bks_pipeline_core.pipeline.activity_log import write_activity_event
         from pipeline.notifications import send_injury_change_signal
+
+        from bks_pipeline_core.pipeline.activity_log import write_activity_event
 
         # Always log all changes to the activity feed for audit purposes.
         write_activity_event(db, "injury_update", date_str, changed_players, source="scheduled_sync")

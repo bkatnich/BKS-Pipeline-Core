@@ -378,9 +378,7 @@ def _assign_top_picks(
         bucket_rank_counter[bucket] += 1
         player["is_top_pick"] = True
         player["top_pick_rank"] = bucket_rank_counter[bucket]
-        player["top_pick_reasons"] = _top_pick_reasons(
-            player, bucket_groups[bucket], role_change_playoff_gate=role_change_playoff_gate
-        )
+        player["top_pick_reasons"] = _top_pick_reasons(player, bucket_groups[bucket], role_change_playoff_gate=role_change_playoff_gate)
 
     # Top 3 ceiling: highest opportunity_score on the slate (results already sorted desc)
     for i, player in enumerate(results[:3], start=1):

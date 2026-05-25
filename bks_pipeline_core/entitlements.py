@@ -29,8 +29,8 @@ _ROSTER_FIELDS: set[str] = {
     "position",
     "headshot_url",
     "sport_person_id",
-    "nba_person_id",     # basketball-specific external ID used by iOS join
-    "mlb_person_id",     # baseball-specific external ID
+    "nba_person_id",  # basketball-specific external ID used by iOS join
+    "mlb_person_id",  # baseball-specific external ID
 }
 
 # All fields — available to every paid tier (Trial and above)

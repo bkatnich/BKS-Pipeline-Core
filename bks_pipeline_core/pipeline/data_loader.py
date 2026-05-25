@@ -78,10 +78,7 @@ def load_prediction_context(
     # --- players ---
     # Exclude players marked is_active=False by the sync pipeline (retired/released).
     # Docs without the field (all existing docs before Phase 7 first runs) pass through.
-    players = [
-        d for doc in db.collection("players").stream()
-        if (d := doc.to_dict() or {}).get("is_active") is not False
-    ]
+    players = [d for doc in db.collection("players").stream() if (d := doc.to_dict() or {}).get("is_active") is not False]
 
     # --- full league defense & pace (all 30 teams) ---
     full_defense_maps: dict[str, dict[str, dict[str, float]]] = {p: {} for p in PLATFORMS}

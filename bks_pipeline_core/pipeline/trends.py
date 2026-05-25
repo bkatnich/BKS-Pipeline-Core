@@ -233,9 +233,7 @@ def _compute_trend_fields(
         recent = all_player_rows[-trend_window:]
         game_count = len(recent)
 
-        playoff_games_played = sum(
-            1 for r in all_player_rows if isinstance(r.get("game"), dict) and r["game"].get("postseason") is True
-        )
+        playoff_games_played = sum(1 for r in all_player_rows if isinstance(r.get("game"), dict) and r["game"].get("postseason") is True)
 
         if game_count < 3:
             is_rc, _rc_delta = _role_change(all_player_rows, trend_window)

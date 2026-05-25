@@ -21,9 +21,9 @@ _STAT_CV: dict[str, float] = {
     "reb": 0.47,
     "ast": 0.52,
     "fg3m": 0.65,  # high variance: shooting streaks, shot-creation variance
-    "stl": 0.80,   # very high variance: opportunistic, defense-scheme dependent
-    "blk": 0.85,   # very high variance: matchup-driven
-    "tov": 0.70,   # high variance: usage and game-script dependent
+    "stl": 0.80,  # very high variance: opportunistic, defense-scheme dependent
+    "blk": 0.85,  # very high variance: matchup-driven
+    "tov": 0.70,  # high variance: usage and game-script dependent
 }
 
 # Consistency scaling: how much consistency_score narrows/widens the CV.

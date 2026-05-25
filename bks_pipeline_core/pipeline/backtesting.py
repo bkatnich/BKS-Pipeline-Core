@@ -58,6 +58,7 @@ _PLATFORM_DISPLAY: dict[str, str] = {
     "fd": "FanDuel",
 }
 
+
 def _pearson_r(xs: list[float], ys: list[float]) -> float | None:
     """Pearson correlation coefficient. Returns None if fewer than 3 pairs or zero variance."""
     n = len(xs)
@@ -172,11 +173,7 @@ def compute_overall_accuracy(joined: list[dict[str, Any]], platform: str = "dk")
     # Filter to rows that have this platform's actual and a scored opportunity_score.
     # Stub players (no trend data, DFS floor gate, playoff eligibility gate) have
     # opportunity_score=None and must be excluded from correlation/MAE computation.
-    rows = [
-        r for r in joined
-        if r.get(f"actual_actual_fp_{platform}") is not None
-        and r.get("opportunity_score") is not None
-    ]
+    rows = [r for r in joined if r.get(f"actual_actual_fp_{platform}") is not None and r.get("opportunity_score") is not None]
 
     if not rows:
         return {
@@ -236,11 +233,7 @@ def compute_signal_accuracy(
     Signals in ``disabled_signals`` are skipped entirely — they always return 1.0
     so their deviations are zero-variance and produce null correlations.
     """
-    rows = [
-        r for r in joined
-        if r.get(f"actual_actual_fp_{platform}") is not None
-        and r.get("opportunity_score") is not None
-    ]
+    rows = [r for r in joined if r.get(f"actual_actual_fp_{platform}") is not None and r.get("opportunity_score") is not None]
     all_signals = [s for s in SIGNAL_MULTIPLIERS if not (disabled_signals and s in disabled_signals)]
 
     result: dict[str, dict[str, Any]] = {}
@@ -402,6 +395,7 @@ def compute_stat_accuracy(joined: list[dict[str, Any]]) -> dict[str, dict[str, A
     Returns a dict keyed by display_name with mae, bias, r, and sample_size.
     """
     from bks_pipeline_core.sport_config import get_active_config
+
     try:
         cfg_fields = get_active_config().stat_fields
     except RuntimeError:
@@ -601,10 +595,7 @@ def compute_daily_accuracy(
     per_version: dict[str, Any] = {}
     if len(versions) > 1 or (len(versions) == 1 and "unknown" not in versions):
         for v, v_rows in versions.items():
-            per_version[v] = {
-                p: {"overall": compute_overall_accuracy(v_rows, p)}
-                for p in platforms
-            }
+            per_version[v] = {p: {"overall": compute_overall_accuracy(v_rows, p)} for p in platforms}
             per_version[v]["sample_size"] = len(v_rows)
 
     # Top-level keys mirror DK for backward compat

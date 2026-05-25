@@ -285,8 +285,9 @@ def refresh_team_trends(
     Reuses :func:`pipeline.trends.fetch_trends` with a targeted player list.
     Returns the number of players refreshed.
     """
-    from bks_pipeline_core.pipeline.league_state import get_league_state
     from pipeline.trends import fetch_trends
+
+    from bks_pipeline_core.pipeline.league_state import get_league_state
 
     api_key = get_active_config().stats_api_key.value
     if not api_key:

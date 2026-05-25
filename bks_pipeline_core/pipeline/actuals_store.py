@@ -32,6 +32,7 @@ def fetch_and_store_actuals(
         returns no stats for the date.
     """
     from api.sport_provider import fetch_stats_by_date  # sport-specific lazy import
+
     from bks_pipeline_core.pipeline.scoring import (
         fantasy_score_raw_dk,
         fantasy_score_raw_fd,

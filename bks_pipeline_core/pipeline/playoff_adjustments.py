@@ -102,9 +102,7 @@ def playoff_cold_start_anchor(
         playoff_weight = playoff_games / 5.0
         series_component = series_avg if (series_avg is not None and series_games > 0) else rolling_avg
         cold_anchor: float = (
-            (_w * filtered_rolling + (1.0 - _w) * (season_fs or filtered_rolling))
-            if season_fs is not None and season_fs > 0
-            else filtered_rolling
+            (_w * filtered_rolling + (1.0 - _w) * (season_fs or filtered_rolling)) if season_fs is not None and season_fs > 0 else filtered_rolling
         )
         anchor = playoff_weight * series_component + (1.0 - playoff_weight) * cold_anchor
         method = f"transition_game_{playoff_games}"

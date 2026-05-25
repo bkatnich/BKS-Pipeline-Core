@@ -122,7 +122,7 @@ def compute_team_defense(
         result: dict[str, dict[str, float]] = defaultdict(dict)
         for (opp_abbr, pos_bucket), obs in obs_dict.items():
             obs.sort(key=lambda x: x[0])
-            recent = obs[-cfg.defense_game_window:]
+            recent = obs[-cfg.defense_game_window :]
             avg = round(sum(v for _, v in recent) / len(recent), 2)
             result[opp_abbr][pos_bucket] = avg
         return dict(result)
@@ -135,7 +135,7 @@ def compute_team_defense(
 
     pace_map: dict[str, float] = {}
     for abbr, games in team_game_poss.items():
-        recent = sorted(games)[-cfg.defense_game_window:]
+        recent = sorted(games)[-cfg.defense_game_window :]
         pace_map[abbr] = round(sum(recent) / len(recent), 1)
 
     defense_dk = _build(observations)
