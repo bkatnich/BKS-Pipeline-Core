@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 #   1. A scoring function in pipeline/scoring.py
 #   2. Computed fields in pipeline/trends.py (_compute_trend_fields)
 #   3. A new entry here
-# Tiers, opportunity scoring, and orchestrator defaults all pick up new platforms automatically.
+# Opportunity scoring and orchestrator defaults all pick up new platforms automatically.
 PLATFORMS: dict[str, dict[str, str]] = {
     "dk": {
         "label": "DraftKings",
@@ -21,7 +21,6 @@ PLATFORMS: dict[str, dict[str, str]] = {
         "confidence_field": "confidence_score",
         "consistency_field": "consistency_score",
         "accel_field": "trend_acceleration",
-        "tier_field": "player_tier",
         "home_fs_field": "avg_fantasy_score_home",
         "away_fs_field": "avg_fantasy_score_away",
         "def_pts_field": "pts_allowed_by_position",
@@ -37,7 +36,6 @@ PLATFORMS: dict[str, dict[str, str]] = {
         "confidence_field": "confidence_score_fd",
         "consistency_field": "consistency_score_fd",
         "accel_field": "trend_acceleration_fd",
-        "tier_field": "player_tier_fd",
         "home_fs_field": "avg_fantasy_score_home_fd",
         "away_fs_field": "avg_fantasy_score_away_fd",
         "def_pts_field": "pts_allowed_by_position_fd",

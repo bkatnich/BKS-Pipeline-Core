@@ -18,7 +18,6 @@ from bks_pipeline_core.pipeline.backtesting import (
     compute_floor_ceiling_calibration,
     compute_overall_accuracy,
     compute_signal_accuracy,
-    compute_tier_accuracy,
     join_predictions_actuals,
 )
 from bks_pipeline_core.pipeline.prediction_store import get_prediction_run
@@ -88,7 +87,6 @@ def run_comparison(
         return None
 
     overall = compute_overall_accuracy(joined)
-    tier_accuracy = compute_tier_accuracy(joined)
     signal_accuracy = compute_signal_accuracy(joined)
     floor_ceiling = compute_floor_ceiling_calibration(joined)
 
@@ -123,7 +121,6 @@ def run_comparison(
         "created_at": now_et.isoformat(),
         "metrics": {
             "overall": overall,
-            "tier_accuracy": tier_accuracy,
             "signal_accuracy": signal_accuracy,
             "floor_ceiling": floor_ceiling,
         },
@@ -157,7 +154,6 @@ def run_comparison(
             "date": actuals_date,
             "sample_size": overall.get("sample_size", 0),
             "overall": overall,
-            "tier_accuracy": tier_accuracy,
             "signal_accuracy": signal_accuracy,
             "floor_ceiling": floor_ceiling,
         }

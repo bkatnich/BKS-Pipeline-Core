@@ -132,14 +132,6 @@ class SportConfig:
     # Maximum pages to fetch from paginated APIs.
     max_pages: int = 20
 
-    # Minimum trend_games to qualify for ranked tiers.
-    tier_min_games: int = 3
-
-    # Tier percentile thresholds.
-    tier_elite_pct: float = 0.90
-    tier_good_pct: float = 0.75
-    tier_solid_pct: float = 0.50
-
     # Game-appearances per team used to compute pts allowed per position.
     defense_game_window: int = 15
 

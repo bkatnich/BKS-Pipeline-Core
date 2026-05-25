@@ -25,7 +25,6 @@ __all__ = [
     "_cat_trend_multiplier",
     "_clamp",
     "_health_factor",
-    "_opportunity_tier",
     "_position_bucket",
     "_position_group",
     "_shooting_luck_multiplier",
@@ -55,14 +54,6 @@ _EXCLUDED_STATUSES = {
     "g league",
     "g league - on assignment",
 }
-
-# ---------------------------------------------------------------------------
-# Tier thresholds
-# ---------------------------------------------------------------------------
-
-_TIER_ELITE = 110.0
-_TIER_GOOD = 80.0
-_TIER_SOLID = 55.0
 
 # ---------------------------------------------------------------------------
 # Position grouping & top picks
@@ -170,19 +161,6 @@ def _health_factor(injury_status: str | None) -> float | None:
     if lower in _EXCLUDED_STATUSES:
         return None
     return _HEALTH_FACTOR.get(lower, 1.0)
-
-
-def _opportunity_tier(score: float, platform: str = "dk") -> str:
-    from config import TIER_THRESHOLDS
-
-    elite, good, solid = TIER_THRESHOLDS.get(platform, TIER_THRESHOLDS["dk"])
-    if score >= elite:
-        return "elite_opp"
-    if score >= good:
-        return "good_opp"
-    if score >= solid:
-        return "solid_opp"
-    return "low_opp"
 
 
 def _position_bucket(position: str | None) -> str:
@@ -332,55 +310,55 @@ def _assign_top_picks(
     all_results: list[dict[str, Any]] | None = None,
     role_change_playoff_gate: bool = False,
 ) -> None:
-    """Flag top picks: exactly one G, F, and C per tier (12 total).
+    """Flag top picks: exactly one G, F, and C per bucket (12 total).
 
     Two-phase selection (operates in-place on the sorted results list):
-      Phase 1 — one pick per position group (G/F/C) per tier, highest score first.
-      Phase 2 — per-tier guarantee: every tier gets all 3 position groups; missing
+      Phase 1 — one pick per position group (G/F/C) per bucket, highest score first.
+      Phase 2 — per-bucket guarantee: every bucket gets all 3 position groups; missing
                  groups are filled from the full pool (all_results) by score.
 
-    Within each tier, top_pick_rank is assigned 1-indexed by opportunity_score desc.
+    Within each bucket, top_pick_rank is assigned 1-indexed by opportunity_score desc.
     all_results: the full unsliced scored list; falls back to results when not provided.
     role_change_playoff_gate: passed through to _top_pick_reasons (see its docstring).
     """
-    _TIERS = ["elite_opp", "good_opp", "solid_opp", "low_opp"]
+    _BUCKETS = ["elite_opp", "good_opp", "solid_opp", "low_opp"]
     _GROUPS = ("G", "F", "C")
     pool = all_results if all_results is not None else results
 
-    tier_buckets: dict[str, list[dict[str, Any]]] = {t: [] for t in _TIERS}
+    bucket_groups: dict[str, list[dict[str, Any]]] = {b: [] for b in _BUCKETS}
     for r in results:
-        tier_buckets[r.get("opportunity_tier", "low_opp")].append(r)
+        bucket_groups[r.get("_opp_bucket", "low_opp")].append(r)
 
     selected: list[dict[str, Any]] = []
     selected_ids: set = set()
 
-    # Phase 1: one per position group per tier (highest score wins within group)
-    for tier in _TIERS:
+    # Phase 1: one per position group per bucket (highest score wins within group)
+    for bucket in _BUCKETS:
         seen_groups: set[str] = set()
-        for player in tier_buckets[tier]:
+        for player in bucket_groups[bucket]:
             grp = _position_group(player.get("position"))
             if grp not in seen_groups:
                 selected.append(player)
                 selected_ids.add(player["id"])
                 seen_groups.add(grp)
 
-    # Phase 2: per-tier position guarantee — every tier must have all 3 groups.
+    # Phase 2: per-bucket position guarantee — every bucket must have all 3 groups.
     gaps: list[tuple[str, str]] = []
-    for tier in _TIERS:
-        tier_groups = {_position_group(p.get("position")) for p in selected if p.get("opportunity_tier") == tier}
+    for bucket in _BUCKETS:
+        bucket_pos_groups = {_position_group(p.get("position")) for p in selected if p.get("_opp_bucket") == bucket}
         for grp in _GROUPS:
-            if grp not in tier_groups:
-                gaps.append((tier, grp))
+            if grp not in bucket_pos_groups:
+                gaps.append((bucket, grp))
 
-    for tier, grp in gaps:
+    for bucket, grp in gaps:
         for player in pool:
             if player["id"] in selected_ids:
                 continue
             if _position_group(player.get("position")) == grp:
-                player["opportunity_tier"] = tier
+                player["_opp_bucket"] = bucket
                 selected.append(player)
                 selected_ids.add(player["id"])
-                tier_buckets[tier].append(player)
+                bucket_groups[bucket].append(player)
                 break
 
     # Reset all pick fields first
@@ -393,15 +371,15 @@ def _assign_top_picks(
         r["is_top_value"] = False
         r["top_value_rank"] = None
 
-    # Assign is_top_pick and per-tier rank (score-ordered within tier)
-    tier_rank_counter: dict[str, int] = {t: 0 for t in _TIERS}
+    # Assign is_top_pick and per-bucket rank (score-ordered within bucket)
+    bucket_rank_counter: dict[str, int] = {b: 0 for b in _BUCKETS}
     for player in sorted(selected, key=lambda p: p["opportunity_score"], reverse=True):
-        tier = player.get("opportunity_tier", "low_opp")
-        tier_rank_counter[tier] += 1
+        bucket = player.get("_opp_bucket", "low_opp")
+        bucket_rank_counter[bucket] += 1
         player["is_top_pick"] = True
-        player["top_pick_rank"] = tier_rank_counter[tier]
+        player["top_pick_rank"] = bucket_rank_counter[bucket]
         player["top_pick_reasons"] = _top_pick_reasons(
-            player, tier_buckets[tier], role_change_playoff_gate=role_change_playoff_gate
+            player, bucket_groups[bucket], role_change_playoff_gate=role_change_playoff_gate
         )
 
     # Top 3 ceiling: highest opportunity_score on the slate (results already sorted desc)
@@ -410,7 +388,7 @@ def _assign_top_picks(
         player["top_ceiling_rank"] = i
 
     # Top 3 value: best sal_val_mult among solid_opp + good_opp players
-    value_pool = [r for r in results if r.get("opportunity_tier") in ("solid_opp", "good_opp")]
+    value_pool = [r for r in results if r.get("_opp_bucket") in ("solid_opp", "good_opp")]
     value_pool.sort(key=lambda p: p.get("sal_val_mult", 1.0), reverse=True)
     for i, player in enumerate(value_pool[:3], start=1):
         player["is_top_value"] = True

@@ -41,7 +41,6 @@ from bks_pipeline_core.pipeline.games import write_games
 from bks_pipeline_core.pipeline.league_state import get_league_state
 from bks_pipeline_core.pipeline.platforms import PLATFORMS
 from bks_pipeline_core.pipeline.playoffs import get_all_series
-from bks_pipeline_core.pipeline.tiers import assign_percentile_tiers
 from bks_pipeline_core.pipeline.vegas import compute_vegas_signals
 from bks_pipeline_core.sport_config import get_active_config
 from bks_pipeline_core.sport_config.base import SportConfig
@@ -259,23 +258,21 @@ _UNIVERSAL_HASH_FIELDS: tuple[str, ...] = (
 def build_trend_fields(cfg: SportConfig) -> frozenset[str]:
     """Return the full set of trend field names for the given sport config.
 
-    Combines universal trend fields, per-platform tier fields, stat category
-    output keys, and sport-specific extras from cfg.trend_field_extras.
+    Combines universal trend fields, stat category output keys, and sport-specific
+    extras from cfg.trend_field_extras.
     """
     category_keys = frozenset(key for key, _, _ in cfg.stat_categories)
-    platform_tier_fields = frozenset(pcfg["tier_field"] for pcfg in PLATFORMS.values())
-    return _UNIVERSAL_TREND_FIELDS | category_keys | platform_tier_fields | cfg.trend_field_extras
+    return _UNIVERSAL_TREND_FIELDS | category_keys | cfg.trend_field_extras
 
 
 def build_hash_fields(cfg: SportConfig) -> tuple[str, ...]:
     """Return the ordered tuple of field names used for change-detection hashing.
 
-    Combines universal hash fields, per-platform tier fields, stat category
-    output keys, and sport-specific extras from cfg.trend_hash_field_extras.
+    Combines universal hash fields, stat category output keys, and sport-specific
+    extras from cfg.trend_hash_field_extras.
     """
     category_keys = tuple(key for key, _, _ in cfg.stat_categories)
-    platform_tier_fields = tuple(pcfg["tier_field"] for pcfg in PLATFORMS.values())
-    return _UNIVERSAL_HASH_FIELDS + platform_tier_fields + category_keys + cfg.trend_hash_field_extras
+    return _UNIVERSAL_HASH_FIELDS + category_keys + cfg.trend_hash_field_extras
 
 
 @dataclass
@@ -412,10 +409,9 @@ def fetch_and_store_players(
       4. Fetch trends for stale players (via hooks.fetch_trends, with circuit breaker)
       4b. Compute team defense ratings from raw stat rows
       4c. Fetch season averages + advanced metrics (via hooks.fetch_season_and_advanced)
-      5. Assign league-wide percentile tiers
       5b. Tag is_playoff_active per player
       6a. Write stale players (full data, skip unchanged via hash)
-      6b. Write fresh players (base fields + updated player_tier only)
+      6b. Write fresh players (base fields only, no trend data)
       7. Mark players no longer in the active set as is_active=False
 
     Returns the total number of players written (stale + fresh).
@@ -545,11 +541,9 @@ def fetch_and_store_players(
             "trend_games": 0,
             "avg_minutes": None,
             "avg_fantasy_score": None,
-            "player_tier": "bottom_feeder",
             "consistency_score": None,
             "trend_updated_at": datetime.now(timezone.utc).isoformat(),
             **{key: None for key, _, _ in _sport_cfg.stat_categories},
-            **{platform_cfg["tier_field"]: "bottom_feeder" for platform_cfg in PLATFORMS.values()},
         }
 
     stale_ids = {p["person_id"] for p in stale_players}
@@ -682,9 +676,7 @@ def fetch_and_store_players(
             _elapsed(),
         )
 
-    # --- Phase 5: assign percentile tiers ---
-    assign_percentile_tiers(all_players, all_trend_data, existing_docs, advanced_metrics_by_player)
-    logger.info("Phase 5 complete: percentile tiers assigned (%.1fs)", _elapsed())
+    # Phase 5 (percentile tiers) removed — tiering is no longer part of the pipeline.
 
     # --- Phase 5b: tag is_playoff_active ---
     league_state = get_league_state(db)
@@ -733,8 +725,7 @@ def fetch_and_store_players(
             if _hash_fields is not None:
                 new_hash = _trend_hash(player, _hash_fields)
                 existing_hash = existing_docs.get(str(player["person_id"]), {}).get("trend_hash")
-                existing_tier = existing_docs.get(str(player["person_id"]), {}).get("player_tier")
-                if new_hash == existing_hash and player.get("player_tier") == existing_tier:
+                if new_hash == existing_hash:
                     total_skipped_unchanged += 1
                     continue
                 player["trend_hash"] = new_hash
@@ -752,7 +743,7 @@ def fetch_and_store_players(
             _elapsed(),
         )
 
-    # --- Phase 6b: write fresh players (base fields + updated player_tier only) ---
+    # --- Phase 6b: write fresh players (base fields only, no trend data) ---
     fresh_players = [p for p in all_players if p["person_id"] not in stale_ids]
     for chunk_start in range(0, len(fresh_players), 500):
         chunk = fresh_players[chunk_start : chunk_start + 500]

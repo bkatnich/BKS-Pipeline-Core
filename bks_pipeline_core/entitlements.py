@@ -38,7 +38,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     # Core predictions
     "opportunity_score",
     "predicted_fp",
-    "opportunity_tier",
     "opportunity_percentile",
     "is_top_pick",
     "top_pick_rank",
@@ -67,9 +66,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     "avg_fantasy_score_fd",
     "confidence_score_dk",
     "confidence_score_fd",
-    "player_tier_dk",
-    "player_tier_fd",
-    "player_tier",
     "platform",
     "mode",
     # Trend signals

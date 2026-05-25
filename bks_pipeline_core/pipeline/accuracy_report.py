@@ -9,8 +9,6 @@ from typing import Any
 
 from bks_pipeline_core.sport_config import get_active_config
 
-_TIER_ORDER = ["elite_opp", "good_opp", "solid_opp", "low_opp"]
-
 _SIGNAL_DISPLAY_NAMES: dict[str, str] = {
     "matchup_multiplier": "Matchup (Defense)",
     "vegas_multiplier": "Vegas ITT",
@@ -186,42 +184,6 @@ def _summary_overall(per_platform: dict[str, Any], platforms: list[str]) -> str:
 
     text = " ".join(parts)
     return f'<p style="{_SUMMARY_STYLE}">{text}</p>' if text.strip() else ""
-
-
-def _summary_tier(tiers: dict[str, Any], platform_label: str) -> str:
-    """Narrative summary for one platform's tier block."""
-    if not tiers:
-        return ""
-    tier_valid = tiers.get("_tier_ordering_valid", True)
-    elite = tiers.get("elite_opp") or {}
-    low = tiers.get("low_opp") or {}
-    elite_fp = elite.get("mean_actual_fp")
-    low_fp = low.get("mean_actual_fp")
-    elite_hr = elite.get("hit_rate")
-
-    parts: list[str] = []
-    if not tier_valid:
-        parts.append("&#9888; Tier ordering is INVERTED — lower tiers outperformed higher tiers. Investigate scoring or tier assignment.")
-    elif elite_fp is not None and low_fp is not None:
-        spread = elite_fp - low_fp
-        if spread > 15:
-            parts.append(
-                f"Elite-tier players averaged {elite_fp:.1f} FP vs {low_fp:.1f} for low-tier"
-                f" — a {spread:.1f}-pt spread confirms tier discrimination is working."
-            )
-        else:
-            parts.append(f"Tier spread is modest ({spread:.1f} FP elite vs low) but ordering is intact.")
-
-    if elite_hr is not None:
-        if elite_hr >= 0.60:
-            parts.append(f"Elite-tier hit rate of {_pct(elite_hr)} — top-rated players are reliably delivering.")
-        elif elite_hr < 0.50:
-            parts.append(f"Elite-tier hit rate of {_pct(elite_hr)} is below 50% — the tier may be mis-calibrated.")
-        else:
-            parts.append(f"Elite-tier hit rate: {_pct(elite_hr)}.")
-
-    text = " ".join(parts)
-    return f'<p style="{_SUMMARY_STYLE_TIGHT}">{text}</p>' if text.strip() else ""
 
 
 def _summary_signal(all_sigs: dict[str, Any], platforms: list[str]) -> str:
@@ -539,58 +501,7 @@ def generate_accuracy_report_html(
     </div>
     """)
 
-    # --- Section 2: Tier Report Card (per-platform sub-tables) ---
-    tier_section_html = ""
-    for p in platforms:
-        tiers = per_platform.get(p, {}).get("tier_accuracy", {})
-        if not tiers:
-            continue
-        label = _PLATFORM_DISPLAY.get(p, p.upper())
-        tier_rows = ""
-        for tier in _TIER_ORDER:
-            t = tiers.get(tier, {})
-            count = t.get("count", 0)
-            if count == 0:
-                continue
-            tier_rows += f"""
-            <tr>
-                <td style="padding:5px 8px;">{tier.replace("_", " ").title()}</td>
-                <td style="text-align:center;">{count}</td>
-                <td style="text-align:center;font-weight:bold;">{_fmt(t.get("mean_actual_fp"), 1)}</td>
-                <td style="text-align:center;">{_fmt(t.get("mean_predicted_baseline"), 1)}</td>
-                <td style="text-align:center;">{_pct(t.get("hit_rate"))}</td>
-            </tr>
-            """
-        tier_valid = tiers.get("_tier_ordering_valid", True)
-        tier_status = (
-            '<span style="color:#2d7d46;">Tiers properly ordered</span>' if tier_valid else '<span style="color:#c0392b;">Tier ordering INVERTED</span>'
-        )
-        tier_section_html += f"""
-        <p style="font-size:13px;font-weight:bold;color:#555;margin:12px 0 4px;">{label}</p>
-        {_summary_tier(tiers, label)}
-        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:4px;">
-            <tr style="background:#f5f5f5;">
-                <th style="padding:6px;text-align:left;">Tier</th>
-                <th style="text-align:center;">Count</th>
-                <th style="text-align:center;">Mean Actual FP</th>
-                <th style="text-align:center;">Mean Predicted</th>
-                <th style="text-align:center;">Hit Rate</th>
-            </tr>
-            {tier_rows}
-        </table>
-        <p style="font-size:12px;color:#666;margin:0 0 12px;">{tier_status}</p>
-        """
-
-    sections.append(f"""
-    <div style="padding:16px 24px;">
-        <h2 style="color:#1a1a2e;border-bottom:2px solid #eee;padding-bottom:8px;">
-            Tier Report Card
-        </h2>
-        {tier_section_html}
-    </div>
-    """)
-
-    # --- Section 3: Signal Scorecard (per-platform r columns) ---
+    # --- Section 2: Signal Scorecard (per-platform r columns) ---
     # Collect all signals from all platforms
     all_sigs: dict[str, dict[str, dict[str, Any]]] = {}  # sig -> platform -> data
     for p in platforms:

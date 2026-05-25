@@ -16,7 +16,6 @@ __all__ = [
     "join_predictions_actuals",
     "compute_match_coverage",
     "compute_overall_accuracy",
-    "compute_tier_accuracy",
     "compute_signal_accuracy",
     "compute_floor_ceiling_calibration",
     "compute_stat_accuracy",
@@ -58,10 +57,6 @@ _PLATFORM_DISPLAY: dict[str, str] = {
     "dk": "DraftKings",
     "fd": "FanDuel",
 }
-
-# Tier ordering (best to worst) for monotonicity checks.
-_TIER_ORDER: list[str] = ["elite_opp", "good_opp", "solid_opp", "low_opp"]
-
 
 def _pearson_r(xs: list[float], ys: list[float]) -> float | None:
     """Pearson correlation coefficient. Returns None if fewer than 3 pairs or zero variance."""
@@ -223,68 +218,6 @@ def compute_overall_accuracy(joined: list[dict[str, Any]], platform: str = "dk")
         "predicted_fp_mae": round(predicted_fp_err, 2),
         "predicted_fp_added_value": round(baseline_err - predicted_fp_err, 2),
     }
-
-
-def compute_tier_accuracy(joined: list[dict[str, Any]], platform: str = "dk") -> dict[str, dict[str, Any]]:
-    """Compute accuracy metrics per opportunity tier for a given platform.
-
-    For each tier: count, mean actual FP, mean predicted baseline, hit rate
-    (fraction who beat median actual FP).
-    """
-    rows = [
-        r for r in joined
-        if r.get(f"actual_actual_fp_{platform}") is not None
-        and r.get("opportunity_score") is not None
-    ]
-
-    if not rows:
-        return {}
-
-    all_actuals = [float(r[f"actual_actual_fp_{platform}"]) for r in rows]
-    all_actuals_sorted = sorted(all_actuals)
-    n = len(all_actuals_sorted)
-    median_actual = all_actuals_sorted[n // 2] if n > 0 else 0.0
-
-    tiers: dict[str, list[dict[str, Any]]] = {}
-    for r in rows:
-        tier = r.get("opportunity_tier", "low_opp")
-        tiers.setdefault(tier, []).append(r)
-
-    result: dict[str, dict[str, Any]] = {}
-    for tier in _TIER_ORDER:
-        players = tiers.get(tier, [])
-        if not players:
-            result[tier] = {
-                "count": 0,
-                "mean_actual_fp": 0.0,
-                "mean_predicted_baseline": 0.0,
-                "hit_rate": 0.0,
-                "mean_opportunity_score": 0.0,
-            }
-            continue
-
-        actual_fps = [float(p[f"actual_actual_fp_{platform}"]) for p in players]
-        baselines = [float(p.get(f"avg_fantasy_score_{platform}") or p.get("avg_fantasy_score") or 0) for p in players]
-        opp_scores = [float(p["opportunity_score"]) for p in players]
-        hits = sum(1 for fp in actual_fps if fp >= median_actual)
-
-        result[tier] = {
-            "count": len(players),
-            "mean_actual_fp": round(sum(actual_fps) / len(actual_fps), 2),
-            "mean_predicted_baseline": round(sum(baselines) / len(baselines), 2),
-            "hit_rate": round(hits / len(players), 3),
-            "mean_opportunity_score": round(sum(opp_scores) / len(opp_scores), 2),
-        }
-
-    # Check tier ordering monotonicity.
-    # Adjacent tiers within _TIER_INVERSION_TOLERANCE FP are treated as equal —
-    # a 0.1 FP difference on small samples is noise, not a true inversion.
-    _TIER_INVERSION_TOLERANCE = 1.0
-    means = [result.get(t, {}).get("mean_actual_fp", 0.0) for t in _TIER_ORDER]
-    monotonic = all(a >= b - _TIER_INVERSION_TOLERANCE for a, b in zip(means, means[1:]))
-    result["_tier_ordering_valid"] = monotonic  # type: ignore[assignment]
-
-    return result
 
 
 def compute_signal_accuracy(
@@ -651,7 +584,6 @@ def compute_daily_accuracy(
     for p in platforms:
         per_platform[p] = {
             "overall": compute_overall_accuracy(joined, p),
-            "tier_accuracy": compute_tier_accuracy(joined, p),
             "signal_accuracy": compute_signal_accuracy(joined, p, disabled_signals=disabled),
             "floor_ceiling": compute_floor_ceiling_calibration(joined, p),
         }
@@ -685,7 +617,6 @@ def compute_daily_accuracy(
         "stat_accuracy": stat_accuracy,
         # Backward-compat top-level keys (DK)
         "overall": dk.get("overall", {}),
-        "tier_accuracy": dk.get("tier_accuracy", {}),
         "signal_accuracy": dk.get("signal_accuracy", {}),
         "floor_ceiling": dk.get("floor_ceiling", {}),
     }
@@ -982,23 +913,5 @@ def generate_insights(
         _check_overall(rolling_doc.get("overall", {}), "DK")
         _check_signals(rolling_doc.get("signal_accuracy", {}), "DK")
         _check_fc(rolling_doc.get("floor_ceiling", {}), "DK")
-
-    # Check tier ordering across all daily docs
-    if daily_docs:
-        inversions = 0
-        for d in daily_docs:
-            tier_data = d.get("tier_accuracy", {})
-            if not tier_data.get("_tier_ordering_valid", True):
-                inversions += 1
-        if inversions > len(daily_docs) * 0.5 and len(daily_docs) >= 3:
-            insights.append(
-                {
-                    "severity": "warning",
-                    "signal": "tier_ordering",
-                    "message": (
-                        f"Tier ordering inverted on {inversions}/{len(daily_docs)} days. Higher-rated tiers not consistently outperforming lower tiers."
-                    ),
-                }
-            )
 
     return insights
