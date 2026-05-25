@@ -577,8 +577,10 @@ def fetch_and_store_players(
         player.update(all_trend_data.get(player["person_id"], default_trend))
 
     # --- Phase 4c: fetch season averages + advanced metrics ---
+    # Scope to players who returned rows in Phase 4 — players with no stat rows
+    # (pitchers, bench players with zero ABs) waste API quota on every request.
     advanced_metrics_by_player: dict[int, dict[str, Any]] = {}
-    stale_ids_list = [p["person_id"] for p in stale_players]
+    stale_ids_list = list(all_trend_data.keys()) if all_trend_data else [p["person_id"] for p in stale_players]
     if stale_ids_list:
         try:
             season_data, adv_data = _hooks.fetch_season_and_advanced(stale_ids_list, api_key, logger)
