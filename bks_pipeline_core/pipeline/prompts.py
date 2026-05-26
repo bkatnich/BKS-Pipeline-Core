@@ -193,8 +193,11 @@ def call_claude(
     user: str,
     timeout: float = 90.0,
     cache_system: bool = False,
-) -> str:
-    """Make a single-turn Claude API call and return the text response.
+) -> tuple[str, dict[str, int]]:
+    """Make a single-turn Claude API call and return (text, usage).
+
+    usage keys: input_tokens, output_tokens, cache_read_input_tokens,
+    cache_creation_input_tokens (all int, absent keys default to 0).
 
     When cache_system=True the system prompt is tagged with cache_control
     ephemeral so Anthropic caches it for up to 5 minutes. Use this for
@@ -224,7 +227,14 @@ def call_claude(
     text = next((block.text for block in response.content if block.type == "text"), None)
     if text is None:
         raise RuntimeError(f"Claude returned no text block (model={model})")
-    return text
+    u = response.usage
+    usage: dict[str, int] = {
+        "input_tokens": getattr(u, "input_tokens", 0) or 0,
+        "output_tokens": getattr(u, "output_tokens", 0) or 0,
+        "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", 0) or 0,
+        "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", 0) or 0,
+    }
+    return text, usage
 
 
 # ---------------------------------------------------------------------------

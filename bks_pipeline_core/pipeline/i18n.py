@@ -126,7 +126,7 @@ def _translate_via_claude(text: str, target_lang: str, context: str, api_key: st
 
     try:
         system = build_translation_prompt(lang_name(target_lang), context)
-        translated = call_claude(
+        translated, _usage = call_claude(
             api_key=api_key,
             model=TRANSLATION_MODEL,
             max_tokens=TRANSLATION_MAX_TOKENS,
