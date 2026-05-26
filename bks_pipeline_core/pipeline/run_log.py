@@ -22,8 +22,8 @@ _STAGES_SUB = "stages"
 STAGE_MANIFEST: list[tuple[str, str, str, str]] = [
     # Overnight processing — runs against yesterday's data
     ("overnight", "capture_actuals", "Capture Actuals", "3:00 AM"),
-    ("overnight", "resolve_daily_props", "Resolve Prop Lines", "3:15 AM"),
-    ("overnight", "compute_accuracy", "Compute Accuracy", "4:00 AM"),
+    ("overnight", "resolve_daily_props", "Compute Prop Accuracy", "3:15 AM"),
+    ("overnight", "compute_accuracy", "Compute Fantasy Accuracy", "4:00 AM"),
     # Today's ingestion — fresh data for the current slate (ordered by run time)
     ("today", "sync_today_games", "Sync Today's Games", "12:05 AM"),
     ("today", "sync_active_players", "Sync Players / Trends", "~3:00 AM"),
