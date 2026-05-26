@@ -27,7 +27,6 @@ STAGE_MANIFEST: list[tuple[str, str, str, str]] = [
     ("overnight", "refit_platt_calibration", "Refit Platt Calibration", "4:05 AM"),
     # Today's ingestion — fresh data for the current slate
     ("today", "sync_today_games", "Sync Today's Games", "12:05 AM"),
-    ("today", "sync_upcoming_games", "Sync Upcoming Games", "2:30 AM"),
     ("today", "sync_active_players", "Sync Players / Trends", "~3:00 AM"),
     ("today", "sync_odds", "Sync Vegas Odds", "9:00 AM"),
     ("today", "sync_prop_lines", "Sync Prop Lines", "12:00 PM"),
