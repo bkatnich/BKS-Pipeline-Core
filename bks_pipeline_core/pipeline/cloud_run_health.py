@@ -22,7 +22,7 @@ EXPECTED_SERVICES: frozenset[str] = frozenset(
         "apple-server-notification",
         "assign-insider-tier",
         "capture-actuals",
-        "check-pipeline-morning",
+        "morning-readiness",
         "check-subscription-expirations",
         "checkpipelinepregame",
         "compute-accuracy",
