@@ -24,15 +24,15 @@ STAGE_MANIFEST: list[tuple[str, str, str, str]] = [
     ("overnight", "capture_actuals", "Capture Actuals", "3:00 AM"),
     ("overnight", "resolve_daily_props", "Resolve Prop Lines", "3:15 AM"),
     ("overnight", "compute_accuracy", "Compute Accuracy", "4:00 AM"),
-    # Today's ingestion — fresh data for the current slate
+    # Today's ingestion — fresh data for the current slate (ordered by run time)
     ("today", "sync_today_games", "Sync Today's Games", "12:05 AM"),
     ("today", "sync_active_players", "Sync Players / Trends", "~3:00 AM"),
-    ("today", "sync_odds", "Sync Vegas Odds", "9:00 AM"),
-    ("today", "sync_prop_lines", "Sync Prop Lines", "12:00 PM"),
-    ("today", "check_pipeline_morning", "Morning Health Check", "10:00 AM"),
-    ("today", "morning_analysis", "Morning Analysis", "9:30 AM"),
-    ("today", "snapshot_projections_daily", "Projections Snapshot", "6:30 AM"),
     ("today", "snapshot_predictions_morning", "Morning Predictions Snapshot", "6:00 AM"),
+    ("today", "snapshot_projections_daily", "Projections Snapshot", "6:30 AM"),
+    ("today", "morning_analysis", "Morning Analysis", "9:30 AM"),
+    ("today", "sync_odds", "Sync Vegas Odds", "9:00 AM"),
+    ("today", "check_pipeline_morning", "Morning Health Check", "10:00 AM"),
+    ("today", "sync_prop_lines", "Sync Prop Lines", "12:00 PM"),
     # Predictions — evening snapshot
     ("predictions", "snapshot_predictions_early", "Early Prediction Snapshot", "5:00 PM"),
     ("predictions", "snapshot_predictions", "Final Prediction Snapshot", "7:00 PM"),
