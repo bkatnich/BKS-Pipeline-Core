@@ -36,6 +36,12 @@ Sport repos that consume this package:
 - `/Users/Britton/Documents/Repositories/BlackKatt/Basketball/BKS-Basketball-Server-Firebase`
 - `/Users/Britton/Documents/Repositories/BlackKatt/Baseball/BKS-Baseball-Server-Firebase`
 
+## Branch Policy
+- **Always commit and push to `develop`** — this is the default integration branch for all work.
+- **Never touch `main`** without explicit permission from the user. Do not push, merge, rebase, or force-push to `main` under any circumstances unless directly instructed.
+- If a task would require merging to `main`, stop and ask first.
+- **Exception**: the release workflow in this repo (version bump → tag → push) explicitly targets `main` per the Versioning and Release section — that specific flow still requires explicit permission but is a known use case.
+
 ## Architecture
 
 **BKS-Pipeline-Core** is a shared Python library consumed by BKS (BlackKatt Sports) backend services. It provides reusable components for multi-sport DFS (Daily Fantasy Sports) analytics pipelines, subscription gating, and Firebase/GCP integration.
