@@ -28,10 +28,10 @@ STAGE_MANIFEST: list[tuple[str, str, str, str]] = [
     # Today's ingestion — fresh data for the current slate
     ("today", "sync_today_games", "Sync Today's Games", "12:05 AM"),
     ("today", "sync_upcoming_games", "Sync Upcoming Games", "2:30 AM"),
-    ("today", "sync_active_players", "Sync Players / Trends", "12:30 AM"),
-    ("today", "sync_odds", "Sync Vegas Odds", "7:00 AM"),
+    ("today", "sync_active_players", "Sync Players / Trends", "~3:00 AM"),
+    ("today", "sync_odds", "Sync Vegas Odds", "9:00 AM"),
     ("today", "sync_prop_lines", "Sync Prop Lines", "12:00 PM"),
-    ("today", "check_pipeline_morning", "Morning Health Check", "7:30 AM"),
+    ("today", "check_pipeline_morning", "Morning Health Check", "10:00 AM"),
     ("today", "snapshot_projections_daily", "Projections Snapshot", "6:01 AM"),
     ("today", "snapshot_predictions_morning", "Morning Predictions Snapshot", "6:00 AM"),
     # Predictions — evening snapshot
