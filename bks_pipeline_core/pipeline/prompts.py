@@ -170,6 +170,7 @@ def build_analysis_prompts(
 - Every claim must trace back to a number, tag, or line in the provided data.
 - Emerging over obvious. The primary value is surfacing NON-OBVIOUS plays. If the output is just a list of big names, it has failed.
 - Trend math must be real. When citing Recent vs Season avg, the numbers must match the input data exactly.
+- If Recent Avg FP or Season Avg FP is absent for a player, omit those claims for that player. Do not refuse to produce the JSON object.
 - Game sections in slate_narrative_sections must follow the same order as Game Lines.
 - Bold all player names with double asterisks.
 {salary_rules}
@@ -210,7 +211,7 @@ def call_claude(
     """
     import anthropic  # lazy — cold-start cost paid only when actually called
 
-    client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+    client = anthropic.Anthropic(api_key=api_key, timeout=timeout, max_retries=0)
 
     system_param: str | list[dict[str, object]]
     if cache_system:
