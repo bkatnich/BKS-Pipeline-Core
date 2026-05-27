@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from bks_pipeline_core.sport_config import get_active_config
-
-if TYPE_CHECKING:
-    from bks_pipeline_core.sport_config.base import ScoringWeights
 
 
 def parse_minutes(min_str: str | None) -> float:
@@ -21,7 +18,7 @@ def parse_minutes(min_str: str | None) -> float:
 
 def _compute_score(
     stat: dict[str, Any],
-    weights: "ScoringWeights",
+    weights: dict[str, float],
     minutes: float,
     per_minute_base: float,
     *,
@@ -29,15 +26,16 @@ def _compute_score(
 ) -> float:
     """Compute a weighted fantasy score from a stat dict.
 
-    Applies all scoring weights from the given ScoringWeights instance,
-    including dd_bonus and td_bonus (0.0 means no bonus).
+    Multiplies each key in weights by the matching value in stat, then sums.
+    Stat keys not present in the stat dict contribute 0. This is sport-agnostic:
+    the sport config owns all stat key names and their multipliers.
 
     Args:
-        stat:            Box-score stat dict with optional keys.
-        weights:         Platform-specific ScoringWeights instance.
-        minutes:         Minutes played (used only when normalize=True).
-        per_minute_base: Normalization base (e.g. 36.0 for NBA).
-        normalize:       If True, return per-minute-base-normalized score.
+        stat:            Box-score / result stat dict.
+        weights:         Platform scoring weights — {stat_key: multiplier}.
+        minutes:         Minutes/rounds played (used only when normalize=True).
+        per_minute_base: Normalization base (e.g. 36.0 for NBA, 1.0 for golf).
+        normalize:       If True, return per-unit-normalized score.
                          If False, return raw (game-total) score.
 
     Returns:
@@ -46,30 +44,7 @@ def _compute_score(
     if normalize and minutes <= 0:
         return 0.0
 
-    # Determine which dd/td fields to check — handle both bool flags and count stats
-    cat_pts = stat.get(weights.pts_field) or 0
-    cat_reb = stat.get("reb") or 0
-    cat_ast = stat.get("ast") or 0
-    cat_stl = stat.get("stl") or 0
-    cat_blk = stat.get("blk") or 0
-    cat_ftm = stat.get("ftm") or 0
-    cat_3pm = stat.get("fgm_3pt") or stat.get("fg3m") or 0
-    cat_to = stat.get("turnover") or 0
-    cat_pf = stat.get("pf") or 0
-
-    raw = (
-        cat_pts * weights.pts
-        + cat_reb * weights.reb
-        + cat_ast * weights.ast
-        + cat_stl * weights.stl
-        + cat_blk * weights.blk
-        + cat_ftm * weights.ftm
-        + cat_3pm * weights.fgm_3pt
-        + cat_to * weights.to
-        + cat_pf * weights.pf
-        + (weights.dd_bonus if stat.get("dd") else 0.0)
-        + (weights.td_bonus if stat.get("td") else 0.0)
-    )
+    raw = sum(float(stat.get(k) or 0) * v for k, v in weights.items())
 
     if normalize:
         return raw * (per_minute_base / minutes)

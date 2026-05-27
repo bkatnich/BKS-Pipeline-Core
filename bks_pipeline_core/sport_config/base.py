@@ -9,25 +9,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
-@dataclass(frozen=True)
-class ScoringWeights:
-    """Fantasy scoring weights for a single DFS platform."""
-
-    pts: float
-    reb: float
-    ast: float
-    stl: float
-    blk: float
-    ftm: float = 0.0
-    fgm_3pt: float = 0.0
-    to: float = 0.0
-    pf: float = 0.0
-    dd_bonus: float = 0.0
-    td_bonus: float = 0.0
-    # Optional field name override for the primary fantasy points column.
-    # Used when a sport provider stores FD points under a different key (e.g. "pts_fd").
-    pts_field: str = "pts"
+# ScoringWeights was removed in v0.9.0.
+# scoring_weights is now dict[str, dict[str, float]] — stat key → multiplier.
+# Keys must match the stat keys returned by fetch_player_stats_batch /
+# fetch_competitor_stats_batch for your sport. Example:
+#
+#   "dk": {"pts": 1.0, "reb": 1.2, "ast": 1.5, "stl": 3.0, "blk": 3.0,
+#          "ftm": 1.0, "to": -0.5, "pf": -0.25, "dd": 1.5, "td": 3.0}
+#
+# For sports with no concept of a particular stat, simply omit that key.
+# Basketball (pinned to v0.8.x): continue using ScoringWeights — do not upgrade
+# to v0.9.0 until basketball_nba.py is migrated to plain dicts.
 
 
 @dataclass(frozen=True)
@@ -85,8 +77,10 @@ class SportConfig:
     # NBA standard (Dean Oliver): 0.44
     pace_fta_coefficient: float
 
-    # Fantasy scoring weights keyed by platform ("dk", "fd", …)
-    scoring_weights: dict[str, ScoringWeights]
+    # Fantasy scoring weights keyed by platform ("dk", "fd", …).
+    # Value is a plain dict mapping stat key → float multiplier.
+    # Keys must match stat keys in your sport provider's output.
+    scoring_weights: dict[str, dict[str, float]]
 
     # Raw position string → canonical bucket (e.g. "G-F" → "SG")
     position_bucket_map: dict[str, str]

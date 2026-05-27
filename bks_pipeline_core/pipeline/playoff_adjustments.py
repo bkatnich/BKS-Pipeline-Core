@@ -154,25 +154,31 @@ def playoff_rotation_multiplier(player: dict[str, Any], playoff_games: int) -> d
 
 
 def compute_season_fantasy_score(player: dict[str, Any]) -> float | None:
-    """Compute DraftKings fantasy score from season averages stored on the player doc."""
-    season_ppg: float | None = player.get("season_ppg")
-    if season_ppg is None:
+    """Compute DraftKings fantasy score from season averages stored on the player doc.
+
+    Uses cfg.scoring_weights["dk"] so the computation stays in sync with the
+    sport config rather than hardcoding multipliers. Season average field names
+    are derived from the sport config's stat_categories: each (output_key, stat_key, _)
+    tuple maps to a "season_{stat_key}_pg" field on the player doc.
+    """
+    from bks_pipeline_core.sport_config import get_active_config
+
+    cfg = get_active_config()
+    weights = cfg.scoring_weights.get("dk")
+    if not weights:
         return None
-    # Use season_ppg availability as the quality gate — season_games now tracks
-    # playoff game count, so it cannot be used as a minimum-sample guard here.
-    if player.get("season_ppg") is None:
+
+    # Build a stat dict from season per-game averages keyed by stat_key
+    stat: dict[str, Any] = {}
+    for _, stat_key, _ in cfg.stat_categories:
+        pg_val = player.get(f"season_{stat_key}_pg")
+        if pg_val is not None:
+            stat[stat_key] = float(pg_val)
+
+    if not stat:
         return None
-    result: float = (
-        season_ppg * 1.0
-        + float(player.get("season_rpg") or 0) * 1.2
-        + float(player.get("season_apg") or 0) * 1.5
-        + float(player.get("season_spg") or 0) * 3.0
-        + float(player.get("season_bpg") or 0) * 3.0
-        + float(player.get("season_ftmpg") or 0) * 1.0
-        - float(player.get("season_topg") or 0) * 0.5
-        - float(player.get("season_pfpg") or 0) * 0.25
-    )
-    return result
+
+    return sum(float(stat.get(k) or 0) * v for k, v in weights.items())
 
 
 def _filter_rest_games(player: dict[str, Any], rolling_avg: float) -> float:
