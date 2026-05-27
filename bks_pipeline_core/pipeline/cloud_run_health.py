@@ -44,7 +44,7 @@ EXPECTED_SERVICES: frozenset[str] = frozenset(
         "reconcile-pregame-tasks",
         "record-series-result",
         "redeem-promo-code",
-        "refit-platt-calibration",
+        "refitplatttask",
         "resolvedailypropstask",
         "retrysyncodds",
         "retrytrendsync",
@@ -56,15 +56,14 @@ EXPECTED_SERVICES: frozenset[str] = frozenset(
         "snapshot-predictions-early",
         "snapshot-prop-predictions",
         "sync-active-players",
-        "sync-injury-status-weekday",
-        "sync-injury-status-weekend",
+        "sync-injury-status",
         "sync-market-data",
         "sync-today-games",
         "transition-season-mode",
         "update-user-preferences",
         "validate-apple-receipt",
         "validate-google-receipt",
-        "weekly-backtest-report",
+        "weeklybacktesttask",
     ]
 )
 
