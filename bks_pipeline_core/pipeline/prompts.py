@@ -16,6 +16,9 @@ ANALYSIS_MODEL = "claude-sonnet-4-6"
 ANALYSIS_MAX_TOKENS_CACHED = 3000  # on-demand path (GET handler, cache miss)
 ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 
+GAME_INSIGHT_MODEL = ANALYSIS_MODEL
+GAME_INSIGHT_MAX_TOKENS = 512
+
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 TRANSLATION_MAX_TOKENS = 512
 
@@ -135,11 +138,7 @@ def build_analysis_prompts(
         if arena_context_text
         else ""
     )
-    salary_column_note = (
-        "<!-- Salary = slate salary. -->\n"
-        if salary_medians_text
-        else "<!-- Salary column is N/A — no slate salary data available. -->\n"
-    )
+    salary_column_note = "<!-- Salary = slate salary. -->\n" if salary_medians_text else "<!-- Salary column is N/A — no slate salary data available. -->\n"
     salary_rules = (
         "- Salary context is provided. Use it to identify value plays (high projection relative to salary) "
         "and salary traps (expensive players whose projection does not justify the price). "
@@ -178,6 +177,171 @@ def build_analysis_prompts(
 {series_rules}
 - Return only the JSON object, no prose outside it."""
     return system, user
+
+
+# ---------------------------------------------------------------------------
+# Per-game insights (Stage 1 of map-reduce analysis)
+# ---------------------------------------------------------------------------
+
+_GAME_INSIGHT_SCHEMA = """{
+  "key_players": [
+    // Array of 2-4 strings. Highest-edge players for DFS in this game (both teams).
+    // Each string: player name + 1 sentence stating the edge (stat signal or matchup).
+  ],
+  "matchup_narrative": "2-3 sentences. Cover the total/spread angle and the best DFS construction angle.",
+  "game_stack_targets": [
+    // Array of 1-3 strings. Team(s) to stack and why (implied total, park, bullpen, SP matchup).
+  ],
+  "game_environment": "high-scoring" | "pitcher-duel" | "neutral",
+  "injury_flags": [
+    // Array of strings. ONLY players with non-Active injury status.
+    // Format each: "Player Name (Status: comment)". Empty list if all healthy.
+  ],
+  "line_movement_signal": "sharp" | "fade" | "neutral"
+  // sharp: home ITT moved up >=0.5 runs (offense bet into)
+  // fade:  home ITT moved down >=0.5 runs
+  // neutral: <0.5 run movement, or opening lines unavailable
+}"""
+
+_GAME_INSIGHT_SYSTEM = (
+    "You are a baseball DFS analyst. Produce a compact JSON game analysis object. "
+    "Base every claim on the numbers provided. No prose outside the JSON object. "
+    "The first character of your response must be {."
+)
+
+
+def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]":
+    """Return (system, user) prompts for a single-game per-game insight call.
+
+    Args:
+        game_ctx: Dict assembled by _generate_game_insights() in handlers.py. Keys:
+            game_id, home_team, away_team, game_datetime,
+            over_under, home_implied_total, away_implied_total, home_spread,
+            ou_open, home_implied_open,  (opening lines — may be None)
+            home_probable_pitcher, away_probable_pitcher,  (may be None)
+            home_park_label,  (from park_context_label())
+            umpire,  (may be None)
+            home_bullpen_ip, away_bullpen_ip,  (may be None)
+            home_defense, away_defense,  (pts_allowed_by_position dicts — may be None)
+            players,  (list of snapshot entry dicts, both teams)
+    """
+    # Narrow type imports only needed at call time — avoid top-level Any import
+    home: str = str(game_ctx.get("home_team") or "")
+    away: str = str(game_ctx.get("away_team") or "")
+    game_dt: str = str(game_ctx.get("game_datetime") or "")
+    ou = game_ctx.get("over_under")
+    home_itt = game_ctx.get("home_implied_total")
+    away_itt = game_ctx.get("away_implied_total")
+    spread = game_ctx.get("home_spread")
+    ou_open = game_ctx.get("ou_open")
+    home_itt_open = game_ctx.get("home_implied_open")
+    home_sp = game_ctx.get("home_probable_pitcher") or "unknown"
+    away_sp = game_ctx.get("away_probable_pitcher") or "unknown"
+    park_label: str = str(game_ctx.get("home_park_label") or "")
+    umpire = game_ctx.get("umpire") or "unknown"
+    home_bp = game_ctx.get("home_bullpen_ip")
+    away_bp = game_ctx.get("away_bullpen_ip")
+    home_def: "dict[str, object] | None" = game_ctx.get("home_defense")  # type: ignore[assignment]
+    away_def: "dict[str, object] | None" = game_ctx.get("away_defense")  # type: ignore[assignment]
+    players: "list[dict[str, object]]" = list(game_ctx.get("players") or [])  # type: ignore[arg-type]
+
+    # Lines block
+    ou_str = f"{ou}" if ou is not None else "N/A"
+    home_itt_str = f"{home_itt}" if home_itt is not None else "N/A"
+    away_itt_str = f"{away_itt}" if away_itt is not None else "N/A"
+    spread_str = f"{home} {spread:+.1f}" if spread is not None else "N/A"
+
+    lines_block = f"Lines: O/U {ou_str} | {home} ITT {home_itt_str} | {away} ITT {away_itt_str} | Spread {spread_str}"
+    # Opening lines block — omit entirely if unavailable (avoids confusing Claude)
+    if ou_open is not None or home_itt_open is not None:
+        ou_open_str = f"{ou_open}" if ou_open is not None else "N/A"
+        home_open_str = f"{home_itt_open}" if home_itt_open is not None else "N/A"
+        lines_block += f"\nOpening: O/U {ou_open_str} | {home} ITT {home_open_str}"
+
+    # Bullpen block
+    bp_parts = []
+    if home_bp is not None:
+        bp_parts.append(f"{home}: {home_bp:.1f} IP")
+    if away_bp is not None:
+        bp_parts.append(f"{away}: {away_bp:.1f} IP")
+    bullpen_block = "Bullpen load (last 3d): " + (" | ".join(bp_parts) if bp_parts else "N/A")
+
+    # Defense block
+    def _fmt_defense(d: "dict[str, object] | None", label: str) -> str:
+        if not d:
+            return f"{label} defense: N/A"
+        parts = [f"{pos}:{v:.1f}" for pos, v in sorted(d.items()) if v is not None]
+        return f"{label} defense (avg pts allowed by pos): " + ", ".join(parts)
+
+    defense_block = _fmt_defense(home_def, home) + "\n" + _fmt_defense(away_def, away)
+
+    # Player block — one line per player, sorted by opp_ranking_score desc
+    def _fmt_player(p: "dict[str, object]") -> str:
+        name: str = str(p.get("name") or "")
+        team: str = str(p.get("team") or "")
+        pos: str = str(p.get("position") or "")
+        score = p.get("opp_ranking_score")
+        floor_fp = p.get("fp_floor")
+        ceil_fp = p.get("fp_ceiling")
+        bat_ord = p.get("batting_order")
+        hot = p.get("hot_streak")
+        cold = p.get("cold_streak")
+        recent = p.get("avg_pa_per_game")
+        season = p.get("season_avg_score")
+        injury = str(p.get("injury_status") or "").strip()
+        reasons: "list[object]" = list(p.get("top_pick_reasons") or [])  # type: ignore[arg-type]
+
+        parts = [f"{name} ({team}, {pos})"]
+        if score is not None:
+            parts.append(f"opp={score:.1f}")
+        if floor_fp is not None and ceil_fp is not None:
+            parts.append(f"range={floor_fp:.1f}-{ceil_fp:.1f}")
+        if recent is not None:
+            parts.append(f"recent={recent:.1f}")
+        if season is not None:
+            parts.append(f"season={season:.1f}")
+        if bat_ord:
+            parts.append(f"bat#{bat_ord}")
+        if hot:
+            parts.append(f"hot({hot})")
+        elif cold:
+            parts.append(f"cold({cold})")
+        if injury and injury.lower() not in ("active", ""):
+            parts.append(f"[{injury}]")
+        if reasons:
+            reason_strs = []
+            for r in reasons:
+                if isinstance(r, dict):
+                    rtype = str(r.get("type") or "")
+                    if rtype:
+                        reason_strs.append(rtype)
+                elif isinstance(r, str):
+                    reason_strs.append(r)
+            if reason_strs:
+                parts.append("signals=" + ",".join(reason_strs))
+        return " | ".join(parts)
+
+    sorted_players = sorted(
+        players,
+        key=lambda p: -(float(p.get("opp_ranking_score") or 0)),
+    )
+    player_block = "\n".join(_fmt_player(p) for p in sorted_players) or "No players available"
+
+    user = f"""Game: {away} @ {home} — {game_dt}
+{lines_block}
+Park: {park_label or "standard"}
+Pitchers: {home} SP: {home_sp} | {away} SP: {away_sp}
+Umpire: {umpire}
+{bullpen_block}
+{defense_block}
+
+Players (sorted by opportunity score):
+{player_block}
+
+Output schema (return only this JSON object, no prose):
+{_GAME_INSIGHT_SCHEMA}"""
+
+    return _GAME_INSIGHT_SYSTEM, user
 
 
 # ---------------------------------------------------------------------------
