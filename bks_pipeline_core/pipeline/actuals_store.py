@@ -1,4 +1,4 @@
-"""Fetch and store actual fantasy-point results for a given game date.
+"""Fetch and store actual game results for a given game date.
 
 Extracted from ``handlers.capture_actuals`` so both the scheduler and
 on-demand HTTP endpoint can share the same logic.  The snapshot-existence
@@ -22,10 +22,13 @@ def fetch_and_store_actuals(
     api_key: str,
     log: logging.Logger | None = None,
 ) -> dict[str, dict[str, Any]] | None:
-    """Fetch box scores for *date*, compute fantasy points, and store.
+    """Fetch box scores for *date* and store raw stat actuals.
 
     Idempotent: if ``actuals/{date}`` already exists the stored data is
     returned without re-fetching from the API.
+
+    Sport projects should call this from their actuals handler and may extend
+    the returned dict with sport-specific computed fields before writing.
 
     Returns:
         The actuals dict keyed by player ID, or ``None`` when the API
@@ -33,11 +36,7 @@ def fetch_and_store_actuals(
     """
     from api.sport_provider import fetch_stats_by_date  # sport-specific lazy import
 
-    from bks_pipeline_core.pipeline.scoring import (
-        fantasy_score_raw_dk,
-        fantasy_score_raw_fd,
-        parse_minutes,
-    )
+    from bks_pipeline_core.pipeline.scoring import parse_minutes
 
     _log = log or logger
     now_et = datetime.now(ZoneInfo("America/New_York"))
@@ -74,13 +73,7 @@ def fetch_and_store_actuals(
         visitor_abbr = visitor_team.get("abbreviation") if isinstance(visitor_team, dict) else None
         opp_abbr = visitor_abbr if team_abbr == home_abbr else home_abbr
 
-        # Detect double-double and triple-double for DK scoring
-        cats_10 = sum(1 for cat in ["pts", "reb", "ast", "stl", "blk"] if (row.get(cat) or 0) >= 10)
-        stat_with_bonuses = {**row, "dd": cats_10 >= 2, "td": cats_10 >= 3}
-
         actuals[pid] = {
-            "actual_fp_dk": round(fantasy_score_raw_dk(stat_with_bonuses), 2),
-            "actual_fp_fd": round(fantasy_score_raw_fd(row), 2),
             "actual_minutes": round(minutes, 1),
             "actual_pts": row.get("pts") or 0,
             "actual_reb": row.get("reb") or 0,

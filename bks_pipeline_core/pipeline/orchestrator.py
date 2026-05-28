@@ -195,7 +195,6 @@ _UNIVERSAL_TREND_FIELDS: frozenset[str] = frozenset(
         "trend_score",
         "trend_games",
         "avg_minutes",
-        "avg_fantasy_score",
         "consistency_score",
         "trend_updated_at",
         "trend_acceleration",
@@ -204,8 +203,6 @@ _UNIVERSAL_TREND_FIELDS: frozenset[str] = frozenset(
         "cold_streak",
         "streak_length",
         "is_role_change",
-        "avg_fantasy_score_home",
-        "avg_fantasy_score_away",
         "recent_game_scores",
         "recent_game_minutes",
     }
@@ -216,9 +213,6 @@ _UNIVERSAL_HASH_FIELDS: tuple[str, ...] = (
     "trend_score",
     "trend_games",
     "avg_minutes",
-    "avg_fantasy_score",
-    "avg_fantasy_score_home",
-    "avg_fantasy_score_away",
     "consistency_score",
     "confidence_score",
     "trend_acceleration",
@@ -449,7 +443,6 @@ def fetch_and_store_players(
         for doc in players_ref.select(
             [
                 "trend_updated_at",
-                "avg_fantasy_score",
                 "trend_games",
                 "trend_hash",
                 "is_active",
@@ -516,7 +509,6 @@ def fetch_and_store_players(
             "trend_score": None,
             "trend_games": 0,
             "avg_minutes": None,
-            "avg_fantasy_score": None,
             "consistency_score": None,
             "trend_updated_at": datetime.now(timezone.utc).isoformat(),
             **{key: None for key, _, _ in _sport_cfg.stat_categories},
@@ -614,12 +606,11 @@ def fetch_and_store_players(
 
     # --- Phase 4b: compute and persist team defensive ratings ---
     if all_raw_rows:
-        defense_map, defense_map_fd, pace_map = compute_team_defense(all_raw_rows)
+        defense_map, pace_map = compute_team_defense(all_raw_rows)
         defense_ref = db.collection("team_defense")
         now_iso = datetime.now(timezone.utc).isoformat()
-        all_abbrs = set(defense_map) | set(defense_map_fd)
-        all_abbrs_list = list(all_abbrs)
-        for chunk_start in range(0, len(all_abbrs), 500):
+        all_abbrs_list = list(defense_map.keys())
+        for chunk_start in range(0, len(all_abbrs_list), 500):
             chunk_abbrs = all_abbrs_list[chunk_start : chunk_start + 500]
             batch = db.batch()
             for abbr in chunk_abbrs:
@@ -629,7 +620,6 @@ def fetch_and_store_players(
                     {
                         "team_abbr": abbr,
                         "pts_allowed_by_position": defense_map.get(abbr, empty_pos),
-                        "pts_allowed_by_position_fd": defense_map_fd.get(abbr, empty_pos),
                         "pace": pace_map.get(abbr),
                         "games_sample": 15,
                         "updated_at": now_iso,

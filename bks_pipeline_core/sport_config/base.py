@@ -9,17 +9,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-# ScoringWeights was removed in v0.9.0.
-# scoring_weights is now dict[str, dict[str, float]] — stat key → multiplier.
-# Keys must match the stat keys returned by fetch_player_stats_batch /
-# fetch_competitor_stats_batch for your sport. Example:
-#
-#   "dk": {"pts": 1.0, "reb": 1.2, "ast": 1.5, "stl": 3.0, "blk": 3.0,
-#          "ftm": 1.0, "to": -0.5, "pf": -0.25, "dd": 1.5, "td": 3.0}
-#
-# For sports with no concept of a particular stat, simply omit that key.
-# Basketball (pinned to v0.8.x): continue using ScoringWeights — do not upgrade
-# to v0.9.0 until basketball_nba.py is migrated to plain dicts.
 
 
 @dataclass(frozen=True)
@@ -68,19 +57,14 @@ class SportConfig:
     in config.py.
     """
 
-    # Per-minute normalization base (36.0 for NBA — one regulation game = 48 min,
-    # but DFS scoring is normalized to 36 min of play time by convention)
+    # Per-minute normalization base (36.0 for NBA — one regulation game = 48 min;
+    # 1.0 for baseball/golf where stats are raw totals per game)
     per_minute_base: float
 
     # FTA coefficient in the possession-estimation formula:
     #   possessions ≈ FGA + coeff * FTA - OREB + TOV
     # NBA standard (Dean Oliver): 0.44
     pace_fta_coefficient: float
-
-    # Fantasy scoring weights keyed by platform ("dk", "fd", …).
-    # Value is a plain dict mapping stat key → float multiplier.
-    # Keys must match stat keys in your sport provider's output.
-    scoring_weights: dict[str, dict[str, float]]
 
     # Raw position string → canonical bucket (e.g. "G-F" → "SG")
     position_bucket_map: dict[str, str]

@@ -88,22 +88,22 @@ def build_analysis_prompts(
         today_et: Date string in ET, e.g. "2026-05-09".
         game_count: Number of games on the slate.
         games_text: Pre-formatted game lines block (Away @ Home | Spread | Total).
-        player_rows: Pre-formatted player pool block (Name | Pos | Team | Opp | Proj FP | Matchup Tags | Recent Avg FP | Season Avg FP | Salary | DK Avg Pts).
+        player_rows: Pre-formatted player pool block (Name | Pos | Team | Opp | Opp Score | Matchup Tags | Recent Trends | Salary).
         round_description: "slate", "regular season", or "playoff (Round X)".
         lang_instruction: Optional i18n suffix appended to the system prompt.
         salary_medians_text: Optional pre-formatted position salary medians line, e.g.
-            "Position salary medians (DK): PG: $7,800, SG: $6,400, ...". Empty string
-            when no salary data is available (off-night, FD platform).
+            "Position salary medians: PG: $7,800, SG: $6,400, ...". Empty string
+            when no salary data is available.
         arena_context_text: Optional pre-formatted arena factors block (elevation, travel distance).
             Only populated when at least one game has a meaningful arena factor. Empty string otherwise.
         series_context_text: Optional pre-formatted playoff series context block (series score,
             game number, per-player series averages). Only populated during playoffs. Empty string otherwise.
     """
     system = (
-        "You are a DFS analyst writing for a sharp, experienced daily-fantasy audience. "
+        f"You are a {get_active_config().sport_display_name} analyst writing for a sharp, experienced sports audience. "
         "You MUST base every claim on the data provided below — projections, game lines, "
         "matchup tags, recent performance trends, and salary context where available. "
-        "You MUST NOT infer or fabricate ownership, injury status, or minutes projections "
+        "You MUST NOT infer or fabricate injury status or playing-time projections "
         "beyond what is explicitly stated. "
         "Your response MUST be a single raw JSON object. No markdown fences, no preamble, "
         f"no trailing text. The first character of your response must be {{{lang_instruction}"
@@ -136,9 +136,9 @@ def build_analysis_prompts(
         else ""
     )
     salary_column_note = (
-        "<!-- Salary = DK salary. DK Avg Pts = DraftKings-reported season average. -->\n"
+        "<!-- Salary = slate salary. -->\n"
         if salary_medians_text
-        else "<!-- Salary and DK Avg Pts columns are N/A — no slate salary data available. -->\n"
+        else "<!-- Salary column is N/A — no slate salary data available. -->\n"
     )
     salary_rules = (
         "- Salary context is provided. Use it to identify value plays (high projection relative to salary) "

@@ -272,8 +272,7 @@ def fetch_and_store_injuries(
         # Always log all changes to the activity feed for audit purposes.
         write_activity_event(db, "injury_update", date_str, changed_players, source="scheduled_sync")
 
-        # Only notify for players on playoff-active teams — eliminated team injuries
-        # are irrelevant for DFS purposes.
+        # Only notify for players on playoff-active teams.
         playoff_changes = [p for p in changed_players if p.get("is_playoff_active")]
         if playoff_changes:
             send_injury_change_signal(date_str, playoff_changes)

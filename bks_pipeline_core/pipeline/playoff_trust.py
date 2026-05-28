@@ -7,7 +7,7 @@ Two collections written by grade_playoff_trust() after each playoff game:
 
    Trust score semantics:
      0 games graded → 0.0  (same as game 0 in old ramp — no data yet)
-     MAE < 15% of avg_fs → 1.0  (projecting accurately)
+     MAE < 15% of avg_opportunity_score → 1.0  (projecting accurately)
      MAE 15–25%          → 0.75
      MAE 25–40%          → 0.50
      MAE > 40%           → 0.25
@@ -59,28 +59,20 @@ def _mae_to_trust(mae_pct: float) -> float:
 
 
 def _compute_series_aggregates(game_log: list[dict[str, Any]]) -> dict[str, Any]:
-    """Compute rest-filtered and all-games aggregates from a series game log.
+    """Compute rest-filtered aggregates from a series game log.
 
-    Rest games (actual_minutes < get_active_config().playoff_rest_game_minutes_threshold) are
+    Rest games (actual_minutes < cfg.playoff_rest_game_minutes_threshold) are
     excluded from averages so they don't drag down projections for stars who
-    sat out a blowout. The raw all-games avg is also stored for diagnostics.
+    sat out a blowout.
     """
     active = [g for g in game_log if not g.get("is_rest_game")]
-    all_fps = [g["actual_fp_dk"] for g in game_log]
-    active_fps = [g["actual_fp_dk"] for g in active]
+    active_scores = [g["opportunity_score"] for g in active if g.get("opportunity_score") is not None]
     active_mins = [g["actual_minutes"] for g in active]
-    active_fg3m = [g["actual_fg3m"] for g in active]
-    active_fg3a = [g["actual_fg3a"] for g in active]
     n = len(active) or 1
-    total_fg3a = sum(active_fg3a)
     return {
         "series_games": len(game_log),
-        "series_fp_avg": round(sum(active_fps) / n, 2) if active_fps else 0.0,
-        "series_fp_avg_all": round(sum(all_fps) / len(all_fps), 2) if all_fps else 0.0,
+        "series_fp_avg": round(sum(active_scores) / len(active_scores), 2) if active_scores else 0.0,
         "series_minutes_avg": round(sum(active_mins) / n, 2) if active_mins else 0.0,
-        "series_fg3m_per_game": round(sum(active_fg3m) / n, 3) if active_fg3m else 0.0,
-        "series_fg3a_per_game": round(sum(active_fg3a) / n, 3) if active_fg3a else 0.0,
-        "series_fg3_pct": round(sum(active_fg3m) / total_fg3a, 3) if total_fg3a > 0 else None,
     }
 
 
@@ -91,7 +83,7 @@ def grade_playoff_trust(
     actuals: dict[str, dict[str, Any]],
     active_series: list[dict[str, Any]],
 ) -> int:
-    """Grade predicted_fp vs actual_fp for all active-series players and update trust docs.
+    """Grade opportunity_score predictions vs actuals for active-series players.
 
     Called from compute_accuracy after daily actuals are confirmed. Idempotent
     per date — if a player's trust doc already has this date in graded_dates,
@@ -101,9 +93,9 @@ def grade_playoff_trust(
         db:             Firestore client.
         date:           Game date just graded (YYYY-MM-DD).
         predictions:    Snapshot predictions dict keyed by player_id str.
-                        Each entry must have ``predicted_fp`` and ``avg_fantasy_score``.
+                        Each entry must have ``opportunity_score``.
         actuals:        Actuals dict keyed by player_id str.
-                        Each entry must have ``actual_fp_dk`` and ``dnp``.
+                        Each entry must have ``opportunity_score`` and ``dnp``.
         active_series:  List of series docs with status in ("scheduled", "active").
                         Used to build the active-team → series_id mapping.
 
@@ -136,11 +128,10 @@ def grade_playoff_trust(
         if act is None or act.get("dnp", False):
             continue
 
-        actual_fp = act.get("actual_fp_dk")
-        predicted_fp = pred.get("predicted_fp")
-        avg_fs = pred.get("avg_fantasy_score")
+        actual_score = act.get("opportunity_score")
+        predicted_score = pred.get("opportunity_score")
 
-        if actual_fp is None or predicted_fp is None or not avg_fs or avg_fs <= 0:
+        if actual_score is None or predicted_score is None or float(predicted_score) <= 0:
             continue
 
         # Only grade players on active-series teams
@@ -149,8 +140,8 @@ def grade_playoff_trust(
         if not series_id:
             continue
 
-        abs_error = abs(float(predicted_fp) - float(actual_fp))
-        error_pct = abs_error / float(avg_fs)
+        abs_error = abs(float(predicted_score) - float(actual_score))
+        error_pct = abs_error / float(predicted_score)
 
         trust_ref = db.collection(_COLLECTION).document(pid_str)
         series_ref = db.collection(_SERIES_STATS_COLLECTION).document(pid_str)
@@ -202,13 +193,8 @@ def grade_playoff_trust(
         is_rest = float(act.get("actual_minutes") or 0.0) < get_active_config().playoff_rest_game_minutes_threshold
         new_game_entry: dict[str, Any] = {
             "date": date,
-            "actual_fp_dk": round(float(actual_fp), 2),
+            "opportunity_score": round(float(actual_score), 2),
             "actual_minutes": round(float(act.get("actual_minutes") or 0.0), 1),
-            "actual_pts": int(act.get("actual_pts") or 0),
-            "actual_reb": int(act.get("actual_reb") or 0),
-            "actual_ast": int(act.get("actual_ast") or 0),
-            "actual_fg3m": int(act.get("actual_fg3m") or 0),
-            "actual_fg3a": int(act.get("actual_fg3a") or 0),
             "is_rest_game": is_rest,
         }
         game_log: list[dict[str, Any]] = existing_stats.get("game_log", [])

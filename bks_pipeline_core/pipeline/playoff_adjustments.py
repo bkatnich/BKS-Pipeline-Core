@@ -41,32 +41,27 @@ def playoff_trend_trust(playoff_games: int, player_trust_score: float | None = N
 
 def playoff_cold_start_anchor(
     player: dict[str, Any],
-    avg_fs_field: str = "avg_fantasy_score",
+    rolling_avg_field: str = "opportunity_score",
 ) -> dict[str, Any]:
-    """Compute a playoff-appropriate FP anchor for the predicted_fp calculation.
+    """Compute a playoff-appropriate composite anchor for the opportunity score.
 
-    With 0 playoff games: blend the 5-game rolling avg (late regular-season form)
-    with the full season fantasy score, filtering rest games from the rolling avg.
+    With 0 playoff games: use the rolling opportunity score (regular-season form),
+    filtering rest games from the rolling avg.
 
-    As playoff games accumulate (1-4), gradually shift trust toward the standard
-    anchor logic. At 5+ games the caller should use the normal anchor path.
+    As playoff games accumulate (1-4), gradually shift trust toward the playoff
+    series average. At 5+ games the caller should use the normal anchor path.
 
     When series_fp_avg is present on the player dict (populated by load_series_stats
     in load_prediction_context), it is used as the primary rolling component instead
-    of the heuristic _filter_rest_games() estimate. series_fp_avg is pre-filtered
-    for rest games using actual minutes at write time, and is scoped to the current
-    opponent — more accurate than the 30-day window that mixes pre-playoff games.
+    of the heuristic _filter_rest_games() estimate.
 
     Returns:
         {anchor: float, playoff_games: int, method: str}
     """
     _w = get_active_config().playoff_cold_start_rolling_weight
     playoff_games: int = player.get("playoff_games_played") or 0
-    rolling_avg: float = player.get(avg_fs_field) or 0.0
-    season_fs = compute_season_fantasy_score(player)
+    rolling_avg: float = player.get(rolling_avg_field) or 0.0
 
-    # Prefer series_fp_avg (opponent-scoped, rest-filtered at write time) when
-    # available; fall back to the heuristic for game 0 (no series data yet).
     series_avg: float | None = player.get("series_fp_avg")
     series_games: int = player.get("series_games") or 0
     if series_avg is not None and series_games > 0:
@@ -78,36 +73,15 @@ def playoff_cold_start_anchor(
     method: str
 
     if playoff_games == 0:
-        # Pure cold start: trust recent regular-season form + season baseline
-        if season_fs is not None and season_fs > 0 and filtered_rolling > 0:
-            w = _w
-            anchor = w * filtered_rolling + (1.0 - w) * season_fs
-            method = "cold_start_blend"
-        elif filtered_rolling > 0:
-            anchor = filtered_rolling
-            method = "cold_start_rolling_only"
-        elif season_fs is not None and season_fs > 0:
-            anchor = season_fs
-            method = "cold_start_season_only"
-        else:
-            anchor = 0.0
-            method = "cold_start_no_data"
+        anchor = filtered_rolling if filtered_rolling > 0 else rolling_avg
+        method = "cold_start_rolling"
     elif playoff_games < 5:
-        # Transition: blend playoff series avg with cold-start anchor.
-        # playoff_games=1 → 20% playoff, 80% cold-start
-        # playoff_games=4 → 80% playoff, 20% cold-start
-        # Use series_avg as the playoff component when available — it is
-        # opponent-scoped and rest-filtered, unlike the 30d rolling_avg which
-        # still mixes pre-playoff games in the first few games of a series.
         playoff_weight = playoff_games / 5.0
         series_component = series_avg if (series_avg is not None and series_games > 0) else rolling_avg
-        cold_anchor: float = (
-            (_w * filtered_rolling + (1.0 - _w) * (season_fs or filtered_rolling)) if season_fs is not None and season_fs > 0 else filtered_rolling
-        )
+        cold_anchor: float = filtered_rolling if filtered_rolling > 0 else rolling_avg
         anchor = playoff_weight * series_component + (1.0 - playoff_weight) * cold_anchor
         method = f"transition_game_{playoff_games}"
     else:
-        # 5+ games: caller should use normal anchor, but provide rolling as fallback
         anchor = rolling_avg
         method = "standard"
 
@@ -151,34 +125,6 @@ def playoff_rotation_multiplier(player: dict[str, Any], playoff_games: int) -> d
         "playoff_rotation_multiplier": round(effective_mult, 4),
         "rotation_tier": tier,
     }
-
-
-def compute_season_fantasy_score(player: dict[str, Any]) -> float | None:
-    """Compute DraftKings fantasy score from season averages stored on the player doc.
-
-    Uses cfg.scoring_weights["dk"] so the computation stays in sync with the
-    sport config rather than hardcoding multipliers. Season average field names
-    are derived from the sport config's stat_categories: each (output_key, stat_key, _)
-    tuple maps to a "season_{stat_key}_pg" field on the player doc.
-    """
-    from bks_pipeline_core.sport_config import get_active_config
-
-    cfg = get_active_config()
-    weights = cfg.scoring_weights.get("dk")
-    if not weights:
-        return None
-
-    # Build a stat dict from season per-game averages keyed by stat_key
-    stat: dict[str, Any] = {}
-    for _, stat_key, _ in cfg.stat_categories:
-        pg_val = player.get(f"season_{stat_key}_pg")
-        if pg_val is not None:
-            stat[stat_key] = float(pg_val)
-
-    if not stat:
-        return None
-
-    return sum(float(stat.get(k) or 0) * v for k, v in weights.items())
 
 
 def _filter_rest_games(player: dict[str, Any], rolling_avg: float) -> float:

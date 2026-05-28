@@ -7,13 +7,11 @@ and pipeline.playoffs_pipeline.opportunities (playoffs-only engine).
 import logging
 from typing import Any
 
-from bks_pipeline_core.pipeline.platforms import DEFAULT_PLATFORM  # noqa: F401 (re-exported for callers)
 from bks_pipeline_core.sport_config import get_active_config
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "DEFAULT_PLATFORM",
     "VALID_MODES",
     "DEFAULT_MODE",
     "_MODE_WEIGHTS",

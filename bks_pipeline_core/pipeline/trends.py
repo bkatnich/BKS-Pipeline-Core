@@ -22,14 +22,13 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from bks_pipeline_core.pipeline.scoring import (
     compute_season_averages,
     compute_slope,
     compute_streak,
     compute_trend_acceleration,
-    fantasy_score,
     parse_minutes,
 )
 from bks_pipeline_core.sport_config import get_active_config
@@ -163,21 +162,6 @@ def _is_home_game(stat_row: dict[str, Any]) -> bool:
     return team.get("id") == game.get("home_team_id")
 
 
-def _venue_avg(
-    games: list[dict[str, Any]],
-    score_fn: Callable[[dict[str, Any], float], float],
-) -> float | None:
-    """Compute average raw fantasy score for a list of game stat rows."""
-    if not games:
-        return None
-    per_minute_base = get_active_config().per_minute_base
-    raw = []
-    for s in games:
-        m = parse_minutes(s.get("min"))
-        if m > 0:
-            raw.append(score_fn(s, m) * (m / per_minute_base))
-    return round(sum(raw) / len(raw), 2) if raw else None
-
 
 def _empty_trend(
     stat_categories: list[tuple[str, str, bool]],
@@ -185,10 +169,7 @@ def _empty_trend(
     is_rc: bool,
     game_count: int,
     avg_minutes: float | None = None,
-    avg_fantasy_score: float | None = None,
     trend_score: float | None = None,
-    avg_fantasy_score_home: float | None = None,
-    avg_fantasy_score_away: float | None = None,
 ) -> dict[str, Any]:
     """Return a zeroed-out trend field dict for players with insufficient data."""
     cat_trends = {key: None for key, _, _ in stat_categories}
@@ -197,7 +178,6 @@ def _empty_trend(
         "trend_score": trend_score,
         "trend_games": game_count,
         "avg_minutes": avg_minutes,
-        "avg_fantasy_score": avg_fantasy_score,
         "consistency_score": None,
         "trend_updated_at": now_iso,
         "trend_acceleration": None,
@@ -208,8 +188,6 @@ def _empty_trend(
         "days_since_return": None,
         "is_return_game_window": False,
         "is_role_change": is_rc,
-        "avg_fantasy_score_home": avg_fantasy_score_home,
-        "avg_fantasy_score_away": avg_fantasy_score_away,
         "recent_game_scores": [],
         "recent_game_minutes": [],
         **cat_trends,
@@ -244,19 +222,21 @@ def _compute_trend_fields(
 
         minutes_series = [parse_minutes(s.get("min")) for s in recent]
         avg_minutes = round(sum(minutes_series) / len(minutes_series), 1)
-        scores = [fantasy_score(s, m) for s, m in zip(recent, minutes_series)]
-        mean_score = sum(scores) / len(scores)
 
-        raw_scores = [score * (m / per_minute_base) for score, m in zip(scores, minutes_series)]
-        avg_fantasy_score = round(sum(raw_scores) / len(raw_scores), 2)
+        # Sport-agnostic composite score: sum of all trended stat values per game.
+        # Per-minute normalization uses per_minute_base so the scale is consistent
+        # across sports (basketball: per-36 normalized; baseball: raw totals).
+        raw_scores = [
+            sum(
+                (s.get(stat_key) or 0) * (per_minute_base / m) if (per36 and m > 0) else (s.get(stat_key) or 0)
+                for _, stat_key, per36 in stat_categories
+                if stat_key != "min"
+            )
+            for s, m in zip(recent, minutes_series)
+        ]
+        mean_raw = sum(raw_scores) / len(raw_scores) if raw_scores else 0.0
 
-        all_games = all_player_rows
-        home_games = [s for s in all_games if _is_home_game(s)]
-        away_games = [s for s in all_games if not _is_home_game(s)]
-        avg_fantasy_score_home = _venue_avg(home_games, fantasy_score)
-        avg_fantasy_score_away = _venue_avg(away_games, fantasy_score)
-
-        if mean_score == 0:
+        if mean_raw == 0:
             is_rc, _rc_delta = _role_change(all_player_rows, trend_window)
             t = _empty_trend(
                 stat_categories,
@@ -264,16 +244,11 @@ def _compute_trend_fields(
                 is_rc,
                 game_count,
                 avg_minutes=avg_minutes,
-                avg_fantasy_score=0.0,
                 trend_score=0.0,
-                avg_fantasy_score_home=avg_fantasy_score_home,
-                avg_fantasy_score_away=avg_fantasy_score_away,
             )
             t["playoff_games_played"] = playoff_games_played
             trends[pid] = t
             continue
-
-        mean_raw = sum(raw_scores) / len(raw_scores)
         slope = compute_slope(raw_scores)
         normalised = slope / mean_raw if mean_raw > 0 else 0.0
 
@@ -294,7 +269,7 @@ def _compute_trend_fields(
                 series = [(stat.get(stat_key) or 0) for stat in recent]
             cat_trends[field_key] = _normalized_slope(series)
 
-        consistency = _consistency_score(scores)
+        consistency = _consistency_score(raw_scores)
 
         trend_acceleration = compute_trend_acceleration(raw_scores, mean_raw)
 
@@ -315,7 +290,6 @@ def _compute_trend_fields(
             "trend_score": round(normalised, 4),
             "trend_games": game_count,
             "avg_minutes": avg_minutes,
-            "avg_fantasy_score": avg_fantasy_score,
             "consistency_score": consistency,
             "trend_updated_at": now_iso,
             "trend_acceleration": trend_acceleration,
@@ -326,8 +300,6 @@ def _compute_trend_fields(
             "days_since_return": None,
             "is_return_game_window": False,
             "is_role_change": is_rc,
-            "avg_fantasy_score_home": avg_fantasy_score_home,
-            "avg_fantasy_score_away": avg_fantasy_score_away,
             "recent_game_scores": [round(s, 2) for s in raw_scores],
             "recent_game_minutes": [round(m, 1) for m in minutes_series],
             "playoff_games_played": playoff_games_played,

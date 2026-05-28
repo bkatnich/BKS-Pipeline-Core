@@ -15,8 +15,6 @@ from zoneinfo import ZoneInfo
 from google.cloud.firestore_v1 import Query
 
 from bks_pipeline_core.pipeline.backtesting import (
-    compute_floor_ceiling_calibration,
-    compute_overall_accuracy,
     compute_signal_accuracy,
     join_predictions_actuals,
 )
@@ -86,14 +84,12 @@ def run_comparison(
         )
         return None
 
-    overall = compute_overall_accuracy(joined)
     signal_accuracy = compute_signal_accuracy(joined)
-    floor_ceiling = compute_floor_ceiling_calibration(joined)
 
-    # Build top picks summary (top 10 by predicted_fp)
+    # Build top picks summary (top 10 by opportunity_score)
     joined_sorted = sorted(
         joined,
-        key=lambda r: float(r.get("predicted_fp") or r.get("avg_fantasy_score") or 0),
+        key=lambda r: float(r.get("opportunity_score") or 0),
         reverse=True,
     )
     top_picks = [
@@ -101,12 +97,7 @@ def run_comparison(
             "player_id": r.get("player_id"),
             "player_name": f"{r.get('first_name', '')} {r.get('last_name', '')}".strip(),
             "position": r.get("position"),
-            "predicted_fp": round(float(r.get("predicted_fp") or r.get("avg_fantasy_score") or 0), 1),
-            "actual_fp": round(float(r.get("actual_actual_fp_dk", 0)), 1),
-            "delta": round(
-                float(r.get("actual_actual_fp_dk", 0)) - float(r.get("predicted_fp") or r.get("avg_fantasy_score") or 0),
-                1,
-            ),
+            "opportunity_score": round(float(r.get("opportunity_score") or 0), 1),
         }
         for r in joined_sorted[:10]
     ]
@@ -120,15 +111,10 @@ def run_comparison(
         "version_label": pred_run.get("version_label", "unknown"),
         "created_at": now_et.isoformat(),
         "metrics": {
-            "overall": overall,
             "signal_accuracy": signal_accuracy,
-            "floor_ceiling": floor_ceiling,
         },
         "summary": {
-            "sample_size": overall.get("sample_size", 0),
-            "predicted_fp_vs_actual_r": overall.get("predicted_fp_vs_actual_r"),
-            "predicted_fp_mae": overall.get("predicted_fp_mae"),
-            "added_value": overall.get("predicted_fp_added_value"),
+            "sample_size": len(joined),
         },
         "top_picks": top_picks,
         "ttl": ttl,
@@ -137,12 +123,11 @@ def run_comparison(
     _, doc_ref = db.collection("comparison_runs").add(comparison_doc)
     comp_id: str = doc_ref.id
     logger.info(
-        "run_comparison: %s vs %s → %s (r=%s, MAE=%s)",
+        "run_comparison: %s vs %s → %s (sample_size=%d)",
         pred_run.get("version_label"),
         actuals_date,
         comp_id,
-        overall.get("predicted_fp_vs_actual_r"),
-        overall.get("predicted_fp_mae"),
+        len(joined),
     )
 
     # Send email report if requested
@@ -152,10 +137,8 @@ def run_comparison(
         version_label = pred_run.get("version_label", "unknown")
         accuracy_doc: dict[str, Any] = {
             "date": actuals_date,
-            "sample_size": overall.get("sample_size", 0),
-            "overall": overall,
+            "sample_size": len(joined),
             "signal_accuracy": signal_accuracy,
-            "floor_ceiling": floor_ceiling,
         }
         html = generate_accuracy_report_html(accuracy_doc)
         mail_id = f"{now_et.strftime('%Y-%m-%d-%H:%M')}_comparison_{version_label}"

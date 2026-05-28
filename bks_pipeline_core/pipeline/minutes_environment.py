@@ -205,7 +205,7 @@ def compute_minutes_distribution(
 
 def compute_fp_distribution(
     minutes_dist: dict[str, Any],
-    avg_fantasy_score: float,
+    avg_score: float,
     avg_minutes: float,
     recent_game_scores: list[float] | None = None,
 ) -> dict[str, Any]:
@@ -217,7 +217,7 @@ def compute_fp_distribution(
 
     Args:
         minutes_dist: Output from compute_minutes_distribution().
-        avg_fantasy_score: Player's rolling average fantasy points.
+        avg_score: Player's rolling average fantasy points.
         avg_minutes: Player's rolling average minutes.
         recent_game_scores: Recent per-game fantasy scores for
             production variance estimation. Falls back to CV=0.25
@@ -234,7 +234,7 @@ def compute_fp_distribution(
             "fp_per_minute": 0.0,
         }
 
-    fp_per_min = avg_fantasy_score / avg_minutes
+    fp_per_min = avg_score / avg_minutes
     mean_fp = fp_per_min * minutes_dist["mean_minutes"]
 
     # --- Minutes-driven FP variance ---
@@ -244,11 +244,11 @@ def compute_fp_distribution(
     # --- Production variance (shooting, usage, matchup effects) ---
     # Cap at CV=0.45 to prevent outlier games (e.g. Wembanyama 90-pt explosion)
     # from blowing up the std on a 5-game sample and producing impossible ceilings.
-    _max_production_std = 0.45 * avg_fantasy_score
+    _max_production_std = 0.45 * avg_score
     if recent_game_scores and len(recent_game_scores) >= 3:
         fp_production_std = min(stdev(recent_game_scores), _max_production_std)
     else:
-        fp_production_std = 0.25 * avg_fantasy_score  # conservative CV=0.25
+        fp_production_std = 0.25 * avg_score  # conservative CV=0.25
     fp_var_from_production = fp_production_std**2
 
     # --- Combined variance ---
@@ -366,7 +366,7 @@ def minutes_environment_multiplier(
     is_playoffs: bool = False,
     is_back_to_back: bool = False,
     playoff_games: int = 0,
-    avg_fantasy_score_override: float | None = None,
+    avg_score_override: float | None = None,
     recent_game_scores_override: list[float] | None = None,
 ) -> dict[str, Any]:
     """Compute the minutes-environment interaction multiplier.
@@ -376,14 +376,14 @@ def minutes_environment_multiplier(
 
     Args:
         player: Player dict with avg_minutes, recent_game_minutes,
-                avg_fantasy_score.
+                avg_score.
         vegas_team: Team's vegas signals dict {spread, is_favorite, ...}.
                     None or empty if no odds available.
         mode: "balanced", "cash", or "gpp".
         is_playoffs: Whether the game is a playoff game (dampens blowout prob).
         is_back_to_back: Whether the player's team is on a back-to-back.
         playoff_games: Number of playoff games played (for rotation prior fade).
-        avg_fantasy_score_override: Use instead of player["avg_fantasy_score"]
+        avg_score_override: Use instead of player["avg_score"]
                     when computing for a specific platform (e.g. FD).
         recent_game_scores_override: Use instead of player["recent_game_scores"]
                     for platform-specific production variance (e.g. FD scores).
@@ -404,7 +404,7 @@ def minutes_environment_multiplier(
     }
 
     avg_min = player.get("avg_minutes")
-    avg_fs = avg_fantasy_score_override if avg_fantasy_score_override is not None else player.get("avg_fantasy_score")
+    avg_fs = avg_score_override if avg_score_override is not None else player.get("opportunity_score")
     if not avg_min or avg_min <= 0 or not avg_fs or avg_fs <= 0:
         return neutral
 
@@ -442,7 +442,7 @@ def minutes_environment_multiplier(
     else:
         # Balanced: blowout risk pulls expected FP below baseline.
         # mean_fp already accounts for the blowout mixture model, so the
-        # ratio to avg_fantasy_score captures the risk penalty directly.
+        # ratio to opportunity_score captures the risk penalty directly.
         raw_mult = mean_fp / avg_fs
 
     multiplier = max(_MULT_MIN, min(_MULT_MAX, raw_mult))

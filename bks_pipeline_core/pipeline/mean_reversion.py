@@ -47,9 +47,9 @@ def compute_mean_reversion_signal(
 
     Args:
         player: Player dict from Firestore, expected to contain:
-            - avg_fantasy_score (float): rolling average FP
+            - opportunity_score (float): rolling composite opportunity score
             - avg_minutes (float): rolling average minutes
-            - recent_game_scores (list[float]): last N raw FP per game
+            - recent_game_scores (list[float]): last N composite scores per game
             - recent_game_minutes (list[float]): last N minutes per game
         mode: Scoring mode — "balanced", "cash", or "gpp".
 
@@ -67,7 +67,7 @@ def compute_mean_reversion_signal(
         "mean_reversion_multiplier": 1.0,
     }
 
-    avg_fs = player.get("avg_fantasy_score")
+    avg_fs = player.get("opportunity_score")
     avg_min = player.get("avg_minutes")
     recent_scores = player.get("recent_game_scores")
     recent_minutes = player.get("recent_game_minutes")

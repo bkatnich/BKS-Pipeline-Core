@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from bks_pipeline_core.sport_config import get_active_config
-
 
 def parse_minutes(min_str: str | None) -> float:
     """Parse a minutes string like '35' or '35:42' into a float."""
@@ -49,58 +47,6 @@ def _compute_score(
     if normalize:
         return raw * (per_minute_base / minutes)
     return raw
-
-
-def fantasy_score(stat: dict[str, Any], minutes: float) -> float:
-    """Compute a DraftKings-style fantasy score, normalized to per-36 minutes.
-
-    Scoring weights (standard DraftKings):
-      pts×1.0, reb×1.2, ast×1.5, stl×3.0, blk×3.0, ftm×1.0
-      dd bonus +1.5, td bonus +3.0
-      turnover penalty -0.5, personal foul penalty -0.25
-    Per-36 normalization makes scores comparable across role players and starters.
-    Returns 0.0 if minutes == 0.
-    """
-    cfg = get_active_config()
-    weights = cfg.scoring_weights["dk"]
-    return _compute_score(stat, weights, minutes, cfg.per_minute_base, normalize=True)
-
-
-def fantasy_score_fd(stat: dict[str, Any], minutes: float) -> float:
-    """Compute a FanDuel-style fantasy score, normalized to per-36 minutes.
-
-    Scoring weights (standard FanDuel NBA):
-      pts×1.0, reb×1.2, ast×1.5, stl×3.0, blk×3.0, 3pm×0.5
-      no double-double or triple-double bonus
-      turnover penalty -1.0 (stricter than DK), no personal foul penalty
-    Per-36 normalization makes scores comparable across role players and starters.
-    Returns 0.0 if minutes == 0.
-    """
-    cfg = get_active_config()
-    weights = cfg.scoring_weights["fd"]
-    return _compute_score(stat, weights, minutes, cfg.per_minute_base, normalize=True)
-
-
-def fantasy_score_raw_dk(stat: dict[str, Any]) -> float:
-    """Compute raw DraftKings fantasy points (NOT per-36 normalized).
-
-    Same weights as fantasy_score() but returns the actual game score,
-    which is what DraftKings awards. Used to compute actuals for backtesting.
-    """
-    cfg = get_active_config()
-    weights = cfg.scoring_weights["dk"]
-    return _compute_score(stat, weights, 0.0, cfg.per_minute_base, normalize=False)
-
-
-def fantasy_score_raw_fd(stat: dict[str, Any]) -> float:
-    """Compute raw FanDuel fantasy points (NOT per-36 normalized).
-
-    Same weights as fantasy_score_fd() but returns the actual game score.
-    Used to compute actuals for backtesting.
-    """
-    cfg = get_active_config()
-    weights = cfg.scoring_weights["fd"]
-    return _compute_score(stat, weights, 0.0, cfg.per_minute_base, normalize=False)
 
 
 def compute_season_averages(rows: list[dict[str, Any]], min_game_minutes: float = 8.0) -> dict[str, Any]:

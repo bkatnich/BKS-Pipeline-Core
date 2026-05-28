@@ -16,7 +16,6 @@ from zoneinfo import ZoneInfo
 
 from bks_pipeline_core.pipeline.games import compute_series_history, compute_team_rest_days, load_games_doc
 from bks_pipeline_core.pipeline.league_state import get_league_state
-from bks_pipeline_core.pipeline.platforms import PLATFORMS
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +26,8 @@ class PredictionContext:
 
     date: str
     players: list[dict[str, Any]]
-    defense_maps: dict[str, dict[str, dict[str, float]]]
-    full_defense_maps: dict[str, dict[str, dict[str, float]]]
+    defense_maps: dict[str, dict[str, float]]
+    full_defense_maps: dict[str, dict[str, float]]
     games_doc: dict[str, Any]
     yesterday_teams: set[str]
     rest_days: dict[str, int]
@@ -81,27 +80,25 @@ def load_prediction_context(
     players = [d for doc in db.collection("players").stream() if (d := doc.to_dict() or {}).get("is_active") is not False]
 
     # --- full league defense & pace (all 30 teams) ---
-    full_defense_maps: dict[str, dict[str, dict[str, float]]] = {p: {} for p in PLATFORMS}
+    full_defense_maps: dict[str, dict[str, float]] = {}
     full_pace_map: dict[str, float] = {}
     for doc in db.collection("team_defense").stream():
         if doc.exists:
             abbr = doc.id
             d = doc.to_dict() or {}
-            for p_key, p_cfg in PLATFORMS.items():
-                pts = d.get(p_cfg["def_pts_field"])
-                if isinstance(pts, dict):
-                    full_defense_maps[p_key][abbr] = pts
+            pts = d.get("pts_allowed_by_position")
+            if isinstance(pts, dict):
+                full_defense_maps[abbr] = pts
             pace = d.get("pace")
             if pace is not None:
                 full_pace_map[abbr] = pace
 
-    # --- playing-teams subset (backward compat) ---
-    defense_maps: dict[str, dict[str, dict[str, float]]] = {p: {} for p in PLATFORMS}
+    # --- playing-teams subset ---
+    defense_maps: dict[str, dict[str, float]] = {}
     pace_map: dict[str, float] = {}
     for abbr in playing_abbrs:
-        for p_key in PLATFORMS:
-            if abbr in full_defense_maps[p_key]:
-                defense_maps[p_key][abbr] = full_defense_maps[p_key][abbr]
+        if abbr in full_defense_maps:
+            defense_maps[abbr] = full_defense_maps[abbr]
         if abbr in full_pace_map:
             pace_map[abbr] = full_pace_map[abbr]
 

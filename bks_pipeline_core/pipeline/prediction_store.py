@@ -22,7 +22,6 @@ def store_prediction_run(
     db: Any,
     date: str,
     version_label: str,
-    platform: str,
     mode: str,
     predictions: dict[str, dict[str, Any]],
     metadata: dict[str, Any] | None = None,
@@ -34,7 +33,6 @@ def store_prediction_run(
         date:           Game date (``YYYY-MM-DD``).
         version_label:  Human-readable version tag (e.g. ``"v2.1"``,
                         ``"scheduled"`` for the daily auto-run).
-        platform:       Fantasy platform key (``"dk"`` or ``"fd"``).
         mode:           Scoring mode (``"balanced"``, ``"cash"``, ``"gpp"``).
         predictions:    Dict of player predictions keyed by player ID.
         metadata:       Optional arbitrary metadata to attach.
@@ -49,7 +47,6 @@ def store_prediction_run(
         "date": date,
         "version_label": version_label,
         "created_at": now_et.isoformat(),
-        "platform": platform,
         "mode": mode,
         "player_count": len(predictions),
         "predictions": predictions,

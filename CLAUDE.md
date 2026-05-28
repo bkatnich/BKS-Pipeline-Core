@@ -44,7 +44,7 @@ Sport repos that consume this package:
 
 ## Architecture
 
-**BKS-Pipeline-Core** is a shared Python library consumed by BKS (BlackKatt Sports) backend services. It provides reusable components for multi-sport DFS (Daily Fantasy Sports) analytics pipelines, subscription gating, and Firebase/GCP integration.
+**BKS-Pipeline-Core** is a shared Python library consumed by BKS (BlackKatt Sports) backend services. It provides reusable components for multi-sport sports analytics pipelines, subscription gating, and Firebase/GCP integration.
 
 ### Module Map
 
@@ -52,7 +52,7 @@ Sport repos that consume this package:
 
 - **`models/user.py`** — `UserDoc` dataclass representing a subscriber. Tier hierarchy: `expired < trial < basic < pro < premium < insider`. `effective_tier()` accounts for time-based expiration. Serializes to/from Firestore via `to_firestore()` / `from_firestore()`.
 
-- **`sport_config/`** — Sport-agnostic runtime configuration. `SportConfig` holds all sport-specific constants (scoring weights per DFS platform, position taxonomy, stat categories, tier percentiles). Use `get_active_config()` / `set_active_config()` to swap sport context at startup without changing pipeline code.
+- **`sport_config/`** — Sport-agnostic runtime configuration. `SportConfig` holds all sport-specific constants (position taxonomy, stat categories, tier percentiles). Use `get_active_config()` / `set_active_config()` to swap sport context at startup without changing pipeline code.
 
 - **`pipeline/`** — Core analytics modules: prediction vs actuals (`backtesting.py`, `accuracy_report.py`), Firestore persistence (`actuals_store.py`, `activity_log.py`), data models (`games.py`, `injuries.py`, `defense.py`), stat utilities (`mean_reversion.py`, `calibration_store.py`), and service health (`health_check.py`, `cloud_run_health.py`).
 

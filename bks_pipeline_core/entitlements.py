@@ -37,36 +37,16 @@ _ROSTER_FIELDS: set[str] = {
 _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     # Core predictions
     "opportunity_score",
-    "predicted_fp",
     "opportunity_percentile",
     "is_top_pick",
     "top_pick_rank",
     "top_pick_reasons",
     "vegas_prop_lines",
-    # Platform projections
-    "predicted_fp_dk",
-    "predicted_fp_fd",
-    "fp_floor_dk",
-    "fp_ceiling_dk",
-    "fp_floor_fd",
-    "fp_ceiling_fd",
-    "fp_mu_dk",
-    "fp_sigma_dk",
-    "fp_mu_fd",
-    "fp_sigma_fd",
+    # Distribution modeling
     "fp_ceiling",
     "fp_floor",
     "fp_mu",
     "fp_sigma",
-    "prob_over_dk",
-    "prob_under_dk",
-    "prob_over_fd",
-    "prob_under_fd",
-    "avg_fantasy_score_dk",
-    "avg_fantasy_score_fd",
-    "confidence_score_dk",
-    "confidence_score_fd",
-    "platform",
     "mode",
     # Trend signals
     "trend_direction",
@@ -85,8 +65,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     "trend_blk",
     "trend_updated_at",
     # Season averages
-    "avg_fantasy_score",
-    "season_avg_fantasy_score",
     "avg_minutes",
     "projected_minutes",
     "season_ppg",
@@ -118,7 +96,6 @@ _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     "def_ratio_at_position",
     "opp_fantasy_pts_allowed",
     "opp_pts_allowed_by_pos",
-    "opp_pts_allowed_by_pos_fd",
     "opp_pace",
     # Lineup / starter status
     "is_confirmed_starter",
@@ -187,7 +164,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 0,
         "projections_lookahead": 0,
         "fields_allowed": _ROSTER_FIELDS,
-        "platforms": [],
         "props_access": False,
         "notifications": False,
     },
@@ -195,7 +171,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 10,
         "projections_lookahead": 1,
         "fields_allowed": _BASIC_FIELDS,
-        "platforms": ["dk"],
         "props_access": False,
         "notifications": False,
     },
@@ -203,7 +178,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 10,
         "projections_lookahead": 1,
         "fields_allowed": _BASIC_FIELDS,
-        "platforms": ["dk"],
         "props_access": False,
         "notifications": False,
     },
@@ -211,7 +185,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 25,
         "projections_lookahead": 3,
         "fields_allowed": _PRO_FIELDS,
-        "platforms": ["dk", "fd"],
         "props_access": False,
         "notifications": False,
     },
@@ -219,7 +192,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 50,
         "projections_lookahead": 7,
         "fields_allowed": _PREMIUM_FIELDS,
-        "platforms": ["dk", "fd"],
         "props_access": True,
         "notifications": True,
     },
@@ -227,7 +199,6 @@ TIER_ENTITLEMENTS: dict[str, dict[str, Any]] = {
         "opportunities_limit": 100,
         "projections_lookahead": 7,
         "fields_allowed": _PREMIUM_FIELDS,
-        "platforms": ["dk", "fd"],
         "props_access": True,
         "notifications": True,
     },
@@ -247,11 +218,6 @@ def get_entitlements(tier: str) -> dict[str, Any]:
 def get_opportunities_limit(tier: str) -> int:
     """Max number of opportunity results for a tier."""
     return get_entitlements(tier)["opportunities_limit"]
-
-
-def get_allowed_platforms(tier: str) -> list[str]:
-    """Platforms accessible for a tier."""
-    return get_entitlements(tier)["platforms"]
 
 
 def has_props_access(tier: str) -> bool:
@@ -284,6 +250,3 @@ def filter_response_list(data: list[dict[str, Any]], tier: str) -> list[dict[str
     return [{k: v for k, v in item.items() if k in allowed} for item in data]
 
 
-def check_platform_access(tier: str, platform: str) -> bool:
-    """Check if a tier has access to a specific platform."""
-    return platform in get_allowed_platforms(tier)

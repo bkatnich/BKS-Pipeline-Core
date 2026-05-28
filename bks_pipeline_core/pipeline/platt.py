@@ -59,10 +59,9 @@ def compute_stat_distributions(
     µ priority per stat:
       1. projected_{stat} — model-adjusted forward projection (set by projection.py)
       2. season_{stat}pg   — season average counting stat
-      3. predicted_fp × fp_weight — last-resort decomposition for pts/reb/ast only
 
     Using the model's own forward projection as µ keeps the prop probability
-    consistent with predicted_fp rather than anchoring to a stale season average
+    consistent with the signal pipeline rather than anchoring to a stale season average
     that the signal pipeline may have adjusted away from.
 
     Sigma is adjusted by two contextual signals:
@@ -86,10 +85,6 @@ def compute_stat_distributions(
     # projected_stats uses "fg3" key for made 3-pointers; all others match stat name.
     _proj_key_map: dict[str, str] = {"fg3m": "fg3"}
 
-    # Last-resort FP decomposition weights — only used for pts/reb/ast.
-    fp_weights: dict[str, float] = {"pts": 0.45, "reb": 0.30, "ast": 0.25}
-
-    predicted_fp: float = float(result.get("predicted_fp") or 0.0)
     projected_stats: dict[str, Any] = result.get("projected_stats") or {}
 
     # Consistency adjustment: 0.5 = neutral, 1.0 = max narrow, 0.0 = max wide
@@ -116,9 +111,6 @@ def compute_stat_distributions(
             mu = float(proj_raw)
         elif season_raw is not None:
             mu = float(season_raw)
-        elif stat in fp_weights and predicted_fp > 0.0:
-            # Priority 3: last-resort FP decomposition (pts/reb/ast only)
-            mu = predicted_fp * fp_weights[stat]
         else:
             continue
 
@@ -201,7 +193,7 @@ def compute_confidence_intervals(
     """Compute percentile bands for fantasy points and per-stat categories.
 
     Args:
-        result: Opportunity result dict (needs season_ppg/rpg/apg or predicted_fp).
+        result: Opportunity result dict (needs projected_stats or season_ppg/rpg/apg).
         fp_mu: Mean fantasy points from minutes-environment model.
         fp_sigma: Std dev of fantasy points from minutes-environment model.
 
@@ -220,10 +212,10 @@ def compute_confidence_intervals(
             "p75": round(_ppf(0.75, fp_mu, fp_sigma), 1),
             "p90": round(_ppf(0.90, fp_mu, fp_sigma), 1),
         }
-        # Confidence that player beats their season average
-        avg_fs = float(result.get("avg_fantasy_score") or 0)
-        if avg_fs > 0:
-            ci["confidence_pct"] = round(normal_cdf_sf(avg_fs, fp_mu, fp_sigma), 3)
+        # Confidence that player beats their season baseline (opportunity_score)
+        avg_opp = float(result.get("opportunity_score") or 0)
+        if avg_opp > 0:
+            ci["confidence_pct"] = round(normal_cdf_sf(avg_opp, fp_mu, fp_sigma), 3)
 
     # Per-stat percentiles from Normal(mu, sigma)
     dists = compute_stat_distributions(result)

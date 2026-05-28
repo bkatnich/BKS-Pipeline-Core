@@ -26,11 +26,6 @@ _SIGNAL_DISPLAY_NAMES: dict[str, str] = {
     "shooting_luck_multiplier": "Shooting Luck",
 }
 
-_PLATFORM_DISPLAY: dict[str, str] = {
-    "dk": "DraftKings",
-    "fd": "FanDuel",
-}
-
 # Signals hardcoded to 1.0 unconditionally — excluded from compute_signal_accuracy()
 # to avoid zero-variance noise in the scorecard.
 _DISABLED_SIGNAL_FIELDS: set[str] = {
@@ -38,7 +33,7 @@ _DISABLED_SIGNAL_FIELDS: set[str] = {
     "cat_trend_multiplier",  # disabled 2026-04-20, r=-0.156, negative in playoffs
     "venue_multiplier",  # disabled 2026-04-20, r=-0.060, flat home/away premium
     "costar_multiplier",  # code removed 2026-04-27; guard for stale snapshot values
-    "elimination_game_multiplier",  # disabled 2026-05-10, r=-0.031 DK / -0.033 FD, 77% fire rate
+    "elimination_game_multiplier",  # disabled 2026-05-10, r=-0.031, 77% fire rate
 }
 # Public alias so callers (e.g. backtesting.compute_signal_accuracy) can import it.
 DISABLED_SIGNAL_FIELDS = _DISABLED_SIGNAL_FIELDS
@@ -47,9 +42,9 @@ DISABLED_SIGNAL_FIELDS = _DISABLED_SIGNAL_FIELDS
 # should be evaluated then, but produce zero-variance deviations in playoff
 # snapshots — computing r on them yields None or a stale rolling value.
 PLAYOFF_DISABLED_SIGNAL_FIELDS: set[str] = {
-    "vegas_multiplier",  # r=-0.237 DK, disabled 2026-04-28
+    "vegas_multiplier",  # r=-0.237, disabled 2026-04-28
     "stacking_multiplier",  # r=-0.120, disabled in playoffs
-    "mean_reversion_multiplier",  # r=-0.093 FD, disabled in playoffs
+    "mean_reversion_multiplier",  # r=-0.093, disabled in playoffs
     "matchup_multiplier",  # r=-0.128, disabled in playoffs
     "usage_delta_multiplier",  # r=-0.063, disabled in playoffs
     "role_change_multiplier",  # r=-0.061, disabled in playoffs
@@ -116,89 +111,16 @@ def _verdict(val: float | None, good: float, bad: float, low_is_good: bool = Fal
     return "strong" if val >= good else "marginal" if val >= bad else "poor"
 
 
-def _summary_overall(per_platform: dict[str, Any], platforms: list[str]) -> str:
-    """Narrative summary for the Overall Performance section."""
-    if not platforms:
-        return ""
-
-    def _ov(p: str) -> dict[str, Any]:
-        return per_platform.get(p, {}).get("overall", {})
-
-    def _r_sentence(r: float | None) -> str:
-        v = _verdict(r, 0.60, 0.40)
-        if v == "unavailable":
-            return "Correlation data unavailable"
-        if v == "strong":
-            return f"Predictions correlate well with actual fantasy output (r={r:.3f})"
-        if v == "marginal":
-            return f"Predictions show moderate correlation with actuals (r={r:.3f})"
-        return f"Prediction correlation is weak (r={r:.3f})"
-
-    def _av_sentence(av: float | None) -> str:
-        if av is None:
-            return ""
-        if av > 0:
-            return f"The signal stack adds {av:+.2f} FP of value over the raw baseline — signals are helping."
-        if av > -0.5:
-            return f"Signals are marginally reducing accuracy vs the raw baseline ({av:+.2f} FP)."
-        return f"Signals are hurting accuracy ({av:+.2f} FP); review the multiplier chain."
-
-    parts: list[str] = []
-
-    if len(platforms) >= 2:
-        dk_ov = _ov(platforms[0])
-        fd_ov = _ov(platforms[1])
-        dk_r = dk_ov.get("predicted_fp_vs_actual_r")
-        fd_r = fd_ov.get("predicted_fp_vs_actual_r")
-        dk_v = _verdict(dk_r, 0.60, 0.40)
-        fd_v = _verdict(fd_r, 0.60, 0.40)
-        dk_label = _PLATFORM_DISPLAY.get(platforms[0], platforms[0].upper())
-        fd_label = _PLATFORM_DISPLAY.get(platforms[1], platforms[1].upper())
-        if dk_v == fd_v and dk_r is not None and fd_r is not None:
-            parts.append(f"Both platforms show {dk_v} correlation ({dk_label} r={dk_r:.3f}, {fd_label} r={fd_r:.3f}).")
-        else:
-            parts.append(f"{dk_label}: {_r_sentence(dk_r)}. {fd_label}: {_r_sentence(fd_r)}.")
-        dk_av = dk_ov.get("predicted_fp_added_value")
-        fd_av = fd_ov.get("predicted_fp_added_value")
-        if dk_av is not None:
-            parts.append(f"{dk_label} — {_av_sentence(dk_av)}")
-        if fd_av is not None:
-            parts.append(f"{fd_label} — {_av_sentence(fd_av)}")
-        dk_mae = dk_ov.get("predicted_fp_mae")
-        dk_bsr = dk_ov.get("baseline_vs_actual_r")
-        if dk_mae is not None and dk_bsr is not None:
-            parts.append(f"{dk_label} MAE: {dk_mae:.2f} FP. Baseline r: {dk_bsr:.3f}.")
-    else:
-        p = platforms[0]
-        ov = _ov(p)
-        r = ov.get("predicted_fp_vs_actual_r")
-        av = ov.get("predicted_fp_added_value")
-        mae = ov.get("predicted_fp_mae")
-        bsr = ov.get("baseline_vs_actual_r")
-        parts.append(f"{_r_sentence(r)}.")
-        av_s = _av_sentence(av)
-        if av_s:
-            parts.append(av_s)
-        if mae is not None and bsr is not None:
-            parts.append(f"MAE of {mae:.2f} FP. Baseline correlation: {bsr:.3f}.")
-
-    text = " ".join(parts)
-    return f'<p style="{_SUMMARY_STYLE}">{text}</p>' if text.strip() else ""
-
-
-def _summary_signal(all_sigs: dict[str, Any], platforms: list[str]) -> str:
+def _summary_signal(signal_accuracy: dict[str, Any]) -> str:
     """Narrative summary for the Signal Scorecard section."""
-    if not all_sigs or not platforms:
+    if not signal_accuracy:
         return ""
-    first_p = platforms[0]
 
     corrs: dict[str, float] = {}
-    for sig, p_data in all_sigs.items():
-        if sig in _DISABLED_SIGNAL_FIELDS:
-            all_fire = [p_data.get(p, {}).get("fire_rate") or 0.0 for p in platforms]
-            if all(fr == 0.0 for fr in all_fire):
-                continue
-        r = p_data.get(first_p, {}).get("residual_correlation")
+    for sig, data in signal_accuracy.items():
+        if sig in _DISABLED_SIGNAL_FIELDS and (data.get("fire_rate") or 0.0) == 0.0:
+            continue
+        r = data.get("residual_correlation")
         if r is not None:
             corrs[sig] = r
 
@@ -222,42 +144,6 @@ def _summary_signal(all_sigs: dict[str, Any], platforms: list[str]) -> str:
 
     text = " ".join(parts)
     return f'<p style="{_SUMMARY_STYLE}">{text}</p>'
-
-
-def _summary_floor_ceiling(per_platform: dict[str, Any], platforms: list[str]) -> str:
-    """Narrative summary for the Floor/Ceiling Calibration section."""
-    if not platforms:
-        return ""
-    fc = per_platform.get(platforms[0], {}).get("floor_ceiling", {})
-    within = fc.get("within_range_rate")
-    below = fc.get("below_floor_rate")
-    above = fc.get("above_ceiling_rate")
-
-    if within is None:
-        return ""
-
-    parts: list[str] = []
-    if within >= 0.75:
-        parts.append(f"{_pct(within)} of actuals landed within the projected range — brackets are well-calibrated.")
-    elif within >= 0.65:
-        parts.append(f"{_pct(within)} within projected range — slight over-confidence in bracket width.")
-    else:
-        parts.append(f"Only {_pct(within)} within projected range — floor/ceiling brackets are too narrow.")
-
-    if below is not None and above is not None:
-        if below > 0.15:
-            parts.append(f"Floor too optimistic — {_pct(below)} missed their floor (target ~10%).")
-        elif above > 0.15:
-            parts.append(f"Ceiling too conservative — {_pct(above)} exceeded their ceiling (target ~10%).")
-        elif below < 0.05:
-            parts.append(f"Floor may be too pessimistic — only {_pct(below)} are missing it.")
-        elif above < 0.05:
-            parts.append(f"Ceiling may be too aggressive — only {_pct(above)} exceeded it.")
-        else:
-            parts.append("Floor and ceiling miss rates are both near the 10% target.")
-
-    text = " ".join(parts)
-    return f'<p style="{_SUMMARY_STYLE}">{text}</p>' if text.strip() else ""
 
 
 def _summary_stat(stat_accuracy: dict[str, Any]) -> str:
@@ -322,37 +208,13 @@ def _summary_prop_brier(prop_brier: dict[str, Any]) -> str:
     return f'<p style="{_SUMMARY_STYLE}">{text}</p>'
 
 
-def _summary_rolling(rolling_7d: dict[str, Any], per_platform: dict[str, Any], platforms: list[str]) -> str:
+def _summary_rolling(rolling_7d: dict[str, Any], today_signal_accuracy: dict[str, Any]) -> str:
     """Narrative summary for the 7-Day Rolling Trend section."""
-    if not platforms:
-        return ""
-    p = platforms[0]
-    p_label = _PLATFORM_DISPLAY.get(p, p.upper())
-    r7_p = rolling_7d.get("platforms", {}).get(p, {})
-    r7_ov = r7_p.get("overall", {})
-    today_ov = per_platform.get(p, {}).get("overall", {})
-    r7_r = r7_ov.get("predicted_fp_vs_actual_r")
-    today_r = today_ov.get("predicted_fp_vs_actual_r")
+    r7_sigs = rolling_7d.get("signal_accuracy", {})
+    improved = sum(1 for s in r7_sigs if (r7_sigs[s].get("residual_correlation") or 0) > (today_signal_accuracy.get(s, {}).get("residual_correlation") or 0))
+    degraded = sum(1 for s in r7_sigs if (r7_sigs[s].get("residual_correlation") or 0) < (today_signal_accuracy.get(s, {}).get("residual_correlation") or 0))
 
-    parts: list[str] = []
-
-    if r7_r is not None and today_r is not None:
-        delta = r7_r - today_r
-        if delta > 0.02:
-            parts.append(f"Rolling correlation ({r7_r:.3f}) is above today's ({today_r:.3f}) — today was a below-average day for the model.")
-        elif delta < -0.02:
-            parts.append(f"Rolling correlation ({r7_r:.3f}) is below today's ({today_r:.3f}) — today outperformed the recent trend.")
-        else:
-            parts.append(f"Rolling correlation ({r7_r:.3f}) is in line with today's ({today_r:.3f}).")
-    elif r7_r is not None:
-        parts.append(f"7-day rolling {p_label} correlation: {r7_r:.3f}.")
-    else:
-        parts.append("7-day rolling data available.")
-
-    r7_sigs = r7_p.get("signal_accuracy", {})
-    today_sigs = per_platform.get(p, {}).get("signal_accuracy", {})
-    improved = sum(1 for s in r7_sigs if (r7_sigs[s].get("residual_correlation") or 0) > (today_sigs.get(s, {}).get("residual_correlation") or 0))
-    degraded = sum(1 for s in r7_sigs if (r7_sigs[s].get("residual_correlation") or 0) < (today_sigs.get(s, {}).get("residual_correlation") or 0))
+    parts: list[str] = ["7-day rolling signal accuracy:"]
     if improved > degraded:
         parts.append(f"{improved} signals show better 7-day correlation than today; {degraded} have slipped.")
     elif degraded > improved:
@@ -379,31 +241,6 @@ def _league_mode_label(league_state: dict[str, Any] | None) -> str:
     return f"Regular Season ({season})"
 
 
-def _platform_header_cells(platforms: list[str]) -> str:
-    """Return <th> cells for each platform."""
-    return "".join(f'<th style="text-align:center;padding:8px 12px;">{_PLATFORM_DISPLAY.get(p, p.upper())}</th>' for p in platforms)
-
-
-def _overall_row(label: str, key: str, platforms: list[str], per_platform: dict[str, Any], fmt_fn: Any = None) -> str:
-    """Render one row of the overall table with per-platform columns."""
-    cells = ""
-    for p in platforms:
-        val = per_platform.get(p, {}).get("overall", {}).get(key)
-        if fmt_fn:
-            display = fmt_fn(val)
-        elif key.endswith("_r"):
-            color = _color_for_correlation(val)
-            display = f'<span style="color:{color};font-weight:bold;">{_fmt(val)}</span>'
-        elif key == "predicted_fp_added_value":
-            color = "#2d7d46" if (val or 0) > 0 else "#c0392b" if (val or 0) < 0 else "#d4a017"
-            prefix = "+" if (val or 0) > 0 else ""
-            display = f'<span style="color:{color};font-weight:bold;font-size:15px;">{prefix}{_fmt(val, 2)}</span>'
-        else:
-            display = _fmt(val, 2)
-        cells += f'<td style="text-align:center;padding:6px 12px;">{display}</td>'
-    return f'<tr><td style="padding:6px 0;">{label}</td>{cells}</tr>'
-
-
 def generate_accuracy_report_html(
     accuracy: dict[str, Any],
     rolling_7d: dict[str, Any] | None = None,
@@ -422,21 +259,7 @@ def generate_accuracy_report_html(
     """
     date = accuracy.get("date", "Unknown")
     sample_size = accuracy.get("sample_size", 0)
-
-    # Determine which platforms are present
-    per_platform: dict[str, Any] = accuracy.get("platforms", {})
-    platforms = [p for p in ("dk", "fd") if p in per_platform]
-    # Fall back to DK-only from top-level keys for old docs
-    if not platforms:
-        platforms = ["dk"]
-        per_platform = {
-            "dk": {
-                "overall": accuracy.get("overall", {}),
-                "tier_accuracy": accuracy.get("tier_accuracy", {}),
-                "signal_accuracy": accuracy.get("signal_accuracy", {}),
-                "floor_ceiling": accuracy.get("floor_ceiling", {}),
-            }
-        }
+    signal_accuracy: dict[str, Any] = accuracy.get("signal_accuracy", {})
 
     sections: list[str] = []
 
@@ -476,103 +299,53 @@ def generate_accuracy_report_html(
     </div>
     """)
 
-    # --- Section 1: Overall Performance (per-platform columns) ---
-    platform_headers = _platform_header_cells(platforms)
-
-    sections.append(f"""
-    <div style="padding:16px 24px;">
-        <h2 style="color:#1a1a2e;border-bottom:2px solid #eee;padding-bottom:8px;">
-            Overall Performance
-        </h2>
-        {_summary_overall(per_platform, platforms)}
-        <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <tr style="background:#f5f5f5;">
-                <th style="padding:8px;text-align:left;">Metric</th>
-                {platform_headers}
-            </tr>
-            {_overall_row("Predicted FP vs Actual (Pearson r)", "predicted_fp_vs_actual_r", platforms, per_platform)}
-            {_overall_row("Baseline vs Actual (r)", "baseline_vs_actual_r", platforms, per_platform)}
-            {_overall_row("Predicted FP MAE", "predicted_fp_mae", platforms, per_platform)}
-            {_overall_row("Baseline MAE", "baseline_mae", platforms, per_platform)}
-            {_overall_row("Added Value (signals helping?)", "predicted_fp_added_value", platforms, per_platform)}
-            {_overall_row("Opp Score vs Actual (r)", "score_vs_actual_r", platforms, per_platform)}
-            {_overall_row("Opp Score MAE", "score_mae", platforms, per_platform)}
-        </table>
-    </div>
-    """)
-
-    # --- Section 2: Signal Scorecard (per-platform r columns) ---
-    # Collect all signals from all platforms
-    all_sigs: dict[str, dict[str, dict[str, Any]]] = {}  # sig -> platform -> data
-    for p in platforms:
-        for sig, data in per_platform.get(p, {}).get("signal_accuracy", {}).items():
-            all_sigs.setdefault(sig, {})[p] = data
-
-    # Sort by first-platform correlation descending
-    first_p = platforms[0]
-    signal_rows_sorted = sorted(
-        all_sigs.items(),
-        key=lambda x: x[1].get(first_p, {}).get("residual_correlation") or -999,
-        reverse=True,
-    )
-
-    r_headers = "".join(f'<th style="text-align:center;">{_PLATFORM_DISPLAY.get(p, p.upper())} r</th>' for p in platforms)
-    hit_headers = "".join(f'<th style="text-align:center;">{_PLATFORM_DISPLAY.get(p, p.upper())} Hit%</th>' for p in platforms)
-
+    # --- Section 1: Signal Scorecard ---
     _is_playoffs_mode = (league_state or {}).get("mode") == "playoffs"
     _all_disabled = _DISABLED_SIGNAL_FIELDS | (PLAYOFF_DISABLED_SIGNAL_FIELDS if _is_playoffs_mode else set())
 
-    signal_rows_html = ""
-    for sig, p_data in signal_rows_sorted:
-        all_fire_rates = [p_data.get(p, {}).get("fire_rate") or 0.0 for p in platforms]
-        is_zero_fire = all(fr == 0.0 for fr in all_fire_rates)
+    signal_rows_sorted = sorted(
+        signal_accuracy.items(),
+        key=lambda x: x[1].get("residual_correlation") or -999,
+        reverse=True,
+    )
 
-        # Always-disabled signals: silently skip (no row added).
+    signal_rows_html = ""
+    for sig, data in signal_rows_sorted:
+        fire_rate = data.get("fire_rate") or 0.0
+        is_zero_fire = fire_rate == 0.0
+
         if is_zero_fire and sig in _DISABLED_SIGNAL_FIELDS:
             continue
 
         display_name = _SIGNAL_DISPLAY_NAMES.get(sig, sig)
 
-        # Playoff-disabled signals: show a greyed "Disabled" row so readers
-        # know the signal exists but is inactive — stale r values are not rendered.
         if is_zero_fire and sig in _all_disabled:
-            n_data_cols = len(platforms) * 2  # r + hit% per platform
-            disabled_cells = "".join('<td style="text-align:center;color:#bbb;">—</td>' for _ in range(n_data_cols))
             signal_rows_html += f"""
         <tr style="color:#bbb;">
             <td style="padding:6px 8px;">{display_name} <span style="font-size:10px;">(disabled)</span></td>
-            {disabled_cells}
+            <td style="text-align:center;color:#bbb;">—</td>
+            <td style="text-align:center;color:#bbb;">—</td>
             <td style="text-align:center;">0.0%</td>
         </tr>
         """
             continue
 
-        r_cells = ""
-        hit_cells = ""
-        fire_rate = None
-        for p in platforms:
-            data = p_data.get(p, {})
-            corr = data.get("residual_correlation")
-            color = _color_for_correlation(corr)
-            r_cells += f'<td style="text-align:center;color:{color};font-weight:bold;">{_fmt(corr)}</td>'
-
-            hit_rate = data.get("hit_rate")
-            penalty_hit_rate = data.get("penalty_hit_rate")
-            if hit_rate is not None:
-                hit_cells += f'<td style="text-align:center;">{_pct(hit_rate)}</td>'
-            elif penalty_hit_rate is not None:
-                hit_cells += f'<td style="text-align:center;">{_pct(penalty_hit_rate)} <span style="font-size:10px;color:#999;">&#9660;</span></td>'
-            else:
-                hit_cells += '<td style="text-align:center;">N/A</td>'
-
-            if fire_rate is None:
-                fire_rate = data.get("fire_rate")
+        corr = data.get("residual_correlation")
+        color = _color_for_correlation(corr)
+        hit_rate = data.get("hit_rate")
+        penalty_hit_rate = data.get("penalty_hit_rate")
+        if hit_rate is not None:
+            hit_cell = f'<td style="text-align:center;">{_pct(hit_rate)}</td>'
+        elif penalty_hit_rate is not None:
+            hit_cell = f'<td style="text-align:center;">{_pct(penalty_hit_rate)} <span style="font-size:10px;color:#999;">&#9660;</span></td>'
+        else:
+            hit_cell = '<td style="text-align:center;">N/A</td>'
 
         signal_rows_html += f"""
         <tr>
             <td style="padding:6px 8px;">{display_name}</td>
-            {r_cells}
-            {hit_cells}
+            <td style="text-align:center;color:{color};font-weight:bold;">{_fmt(corr)}</td>
+            {hit_cell}
             <td style="text-align:center;">{_pct(fire_rate)}</td>
         </tr>
         """
@@ -582,12 +355,12 @@ def generate_accuracy_report_html(
         <h2 style="color:#1a1a2e;border-bottom:2px solid #eee;padding-bottom:8px;">
             Signal Scorecard
         </h2>
-        {_summary_signal(all_sigs, platforms)}
+        {_summary_signal(signal_accuracy)}
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <tr style="background:#f5f5f5;">
                 <th style="padding:8px;text-align:left;">Signal</th>
-                {r_headers}
-                {hit_headers}
+                <th style="text-align:center;">Correlation r</th>
+                <th style="text-align:center;">Hit%</th>
                 <th style="text-align:center;">Fire Rate</th>
             </tr>
             {signal_rows_html}
@@ -597,55 +370,15 @@ def generate_accuracy_report_html(
             |r|&lt;0.05 = <span style="color:#d4a017;">noise</span>,
             r&lt;-0.05 = <span style="color:#c0392b;">wrong direction</span>.
             &#9660; = penalty-only signal (hit rate = penalized players who underperformed).
-            Signals disabled unconditionally are excluded. Signals disabled in playoffs are shown greyed as &#8220;disabled&#8221; with no r value.
+            Signals disabled unconditionally are excluded. Signals disabled in playoffs shown greyed as &#8220;disabled&#8221;.
         </p>
     </div>
     """)
 
-    # --- Section 4: Floor/Ceiling Calibration (per-platform rows) ---
-    fc_rows = ""
-    fc_metric_labels = [
-        ("below_floor_rate", "Below Floor (target ~10%)"),
-        ("above_ceiling_rate", "Above Ceiling (target ~10%)"),
-        ("within_range_rate", "Within Range (target ~80%)"),
-        ("floor_mae", "Floor MAE"),
-        ("ceiling_mae", "Ceiling MAE"),
-    ]
-    for key, label in fc_metric_labels:
-        cells = ""
-        for p in platforms:
-            fc = per_platform.get(p, {}).get("floor_ceiling", {})
-            val = fc.get(key)
-            if val is None:
-                cells += '<td style="text-align:center;">N/A</td>'
-            elif key.endswith("_rate"):
-                target = 0.10 if "floor" in key or "ceiling" in key else 0.80
-                color = _color_for_rate(val, target)
-                cells += f'<td style="text-align:center;font-weight:bold;color:{color};">{_pct(val)}</td>'
-            else:
-                cells += f'<td style="text-align:center;">{_fmt(val, 2)}</td>'
-        fc_rows += f'<tr><td style="padding:6px 0;">{label}</td>{cells}</tr>'
-
-    sections.append(f"""
-    <div style="padding:16px 24px;">
-        <h2 style="color:#1a1a2e;border-bottom:2px solid #eee;padding-bottom:8px;">
-            Floor/Ceiling Calibration
-        </h2>
-        {_summary_floor_ceiling(per_platform, platforms)}
-        <table style="width:100%;border-collapse:collapse;font-size:14px;">
-            <tr style="background:#f5f5f5;">
-                <th style="padding:8px;text-align:left;">Metric</th>
-                {platform_headers}
-            </tr>
-            {fc_rows}
-        </table>
-    </div>
-    """)
-
-    # --- Section 5: Per-Stat Prediction Accuracy ---
+    # --- Section 2: Per-Stat Prediction Accuracy ---
     stat_accuracy = accuracy.get("stat_accuracy", {})
     if stat_accuracy:
-        stat_order = ["PTS", "REB", "AST", "STL", "BLK", "MIN"]
+        stat_order = list(stat_accuracy.keys())
         stat_rows = ""
         for stat in stat_order:
             data = stat_accuracy.get(stat)
@@ -760,71 +493,33 @@ def generate_accuracy_report_html(
         </div>
         """)
 
-    # --- Section 7: 7-Day Rolling Trend (per-platform) ---
+    # --- Section 3: 7-Day Rolling Trend ---
     if rolling_7d and rolling_7d.get("days", 0) >= 3:
-        r7_per_platform: dict[str, Any] = rolling_7d.get("platforms", {})
-        # Fall back to top-level for old rolling docs
-        if not r7_per_platform:
-            r7_per_platform = {
-                "dk": {
-                    "overall": rolling_7d.get("overall", {}),
-                    "signal_accuracy": rolling_7d.get("signal_accuracy", {}),
-                }
-            }
+        r7_signals: dict[str, Any] = rolling_7d.get("signal_accuracy", {})
 
-        rolling_platform_sections = ""
-        for p in platforms:
-            r7_p = r7_per_platform.get(p, {})
-            r7_overall = r7_p.get("overall", {})
-            r7_signals = r7_p.get("signal_accuracy", {})
-            if not r7_overall and not r7_signals:
+        trend_rows = ""
+        for sig, data in sorted(
+            r7_signals.items(),
+            key=lambda x: x[1].get("residual_correlation") or -999,
+            reverse=True,
+        ):
+            if sig not in _SIGNAL_DISPLAY_NAMES:
                 continue
-
-            p_label = _PLATFORM_DISPLAY.get(p, p.upper())
-            # Daily signal accuracy for delta
-            daily_signals = per_platform.get(p, {}).get("signal_accuracy", {})
-
-            trend_rows = ""
-            for sig, data in sorted(
-                r7_signals.items(),
-                key=lambda x: x[1].get("residual_correlation") or -999,
-                reverse=True,
-            ):
-                # Skip stale keys from old Firestore docs not in the current signal set
-                if sig not in _SIGNAL_DISPLAY_NAMES:
-                    continue
-                corr_7d = data.get("residual_correlation")
-                daily_corr = daily_signals.get(sig, {}).get("residual_correlation")
-                if corr_7d is None:
-                    continue
-                # Skip disabled signals (0% fire rate)
-                if sig in _DISABLED_SIGNAL_FIELDS and (data.get("fire_rate") or 0.0) == 0.0:
-                    continue
-                delta = (corr_7d - daily_corr) if daily_corr is not None else None
-                delta_str = f"{delta:+.3f}" if delta is not None else "N/A"
-                display_name = _SIGNAL_DISPLAY_NAMES.get(sig, sig)
-                trend_rows += f"""
-                <tr>
-                    <td style="padding:4px 8px;">{display_name}</td>
-                    <td style="text-align:center;">{_fmt(corr_7d)}</td>
-                    <td style="text-align:center;">{delta_str}</td>
-                </tr>
-                """
-
-            rolling_platform_sections += f"""
-            <p style="font-size:13px;font-weight:bold;color:#555;margin:12px 0 4px;">{p_label}</p>
-            <p style="font-size:12px;color:#666;margin:0 0 6px;">
-                Rolling r: {_fmt(r7_overall.get("predicted_fp_vs_actual_r"))} &middot;
-                Rolling MAE: {_fmt(r7_overall.get("predicted_fp_mae"), 2)} FP
-            </p>
-            <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;">
-                <tr style="background:#f5f5f5;">
-                    <th style="padding:6px;text-align:left;">Signal</th>
-                    <th style="text-align:center;">7d Correlation</th>
-                    <th style="text-align:center;">vs Today</th>
-                </tr>
-                {trend_rows}
-            </table>
+            corr_7d = data.get("residual_correlation")
+            daily_corr = signal_accuracy.get(sig, {}).get("residual_correlation")
+            if corr_7d is None:
+                continue
+            if sig in _DISABLED_SIGNAL_FIELDS and (data.get("fire_rate") or 0.0) == 0.0:
+                continue
+            delta = (corr_7d - daily_corr) if daily_corr is not None else None
+            delta_str = f"{delta:+.3f}" if delta is not None else "N/A"
+            display_name = _SIGNAL_DISPLAY_NAMES.get(sig, sig)
+            trend_rows += f"""
+            <tr>
+                <td style="padding:4px 8px;">{display_name}</td>
+                <td style="text-align:center;">{_fmt(corr_7d)}</td>
+                <td style="text-align:center;">{delta_str}</td>
+            </tr>
             """
 
         sections.append(f"""
@@ -832,8 +527,15 @@ def generate_accuracy_report_html(
             <h2 style="color:#1a1a2e;border-bottom:2px solid #eee;padding-bottom:8px;">
                 7-Day Rolling Trend &middot; {rolling_7d.get("days", 0)} days
             </h2>
-            {_summary_rolling(rolling_7d, per_platform, platforms)}
-            {rolling_platform_sections}
+            {_summary_rolling(rolling_7d, signal_accuracy)}
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+                <tr style="background:#f5f5f5;">
+                    <th style="padding:6px;text-align:left;">Signal</th>
+                    <th style="text-align:center;">7d Correlation</th>
+                    <th style="text-align:center;">vs Today</th>
+                </tr>
+                {trend_rows}
+            </table>
         </div>
         """)
 

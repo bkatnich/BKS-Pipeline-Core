@@ -24,7 +24,7 @@ MIN_HALF_WIDTH = 0.005  # never fully zero a signal
 MIN_SAMPLE_SIZE = 200  # player-games in rolling window
 MIN_DAYS = 5  # days in rolling window
 MIN_FIRE_RATE = 0.05  # 5% — signals that rarely fire lack data
-ROLLBACK_THRESHOLD = -1.0  # predicted_fp_added_value below this triggers rollback
+ROLLBACK_THRESHOLD = 0.05  # avg signal r below this (near-zero correlation) triggers rollback
 ROLLBACK_CONSECUTIVE_DAYS = 3  # consecutive days below threshold
 
 _MAX_HISTORY = 30  # rolling history entries
@@ -133,14 +133,23 @@ def should_rollback(
 ) -> bool:
     """Check if tuned weights should be rolled back to defaults.
 
-    Triggers when ``predicted_fp_added_value`` is below the threshold
-    for N consecutive recent days.
+    Triggers when mean signal correlation (r) is below the threshold
+    for N consecutive recent days, indicating signals have lost predictive value.
     """
     if len(daily_results) < consecutive_days:
         return False
 
     recent = daily_results[-consecutive_days:]
-    return all((d.get("overall", {}).get("predicted_fp_added_value") or 0.0) < ROLLBACK_THRESHOLD for d in recent)
+    for d in recent:
+        signal_accuracy: dict[str, Any] = d.get("signal_accuracy") or {}
+        if not signal_accuracy:
+            return False
+        rs = [float(v.get("r") or 0.0) for v in signal_accuracy.values() if isinstance(v, dict)]
+        if not rs:
+            return False
+        if (sum(rs) / len(rs)) >= ROLLBACK_THRESHOLD:
+            return False
+    return True
 
 
 def load_signal_weights(
