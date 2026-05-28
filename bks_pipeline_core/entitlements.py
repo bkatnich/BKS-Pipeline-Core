@@ -36,8 +36,8 @@ _ROSTER_FIELDS: set[str] = {
 # All fields — available to every paid tier (Trial and above)
 _BASIC_FIELDS: set[str] = _ROSTER_FIELDS | {
     # Core predictions
-    "opportunity_score",
-    "opportunity_percentile",
+    "opp_ranking_score",
+    "opp_ranking_percentile",
     "is_top_pick",
     "top_pick_rank",
     "top_pick_reasons",

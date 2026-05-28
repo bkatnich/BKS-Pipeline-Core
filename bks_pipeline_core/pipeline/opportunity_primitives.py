@@ -315,7 +315,7 @@ def _assign_top_picks(
       Phase 2 — per-bucket guarantee: every bucket gets all 3 position groups; missing
                  groups are filled from the full pool (all_results) by score.
 
-    Within each bucket, top_pick_rank is assigned 1-indexed by opportunity_score desc.
+    Within each bucket, top_pick_rank is assigned 1-indexed by opp_ranking_score desc.
     all_results: the full unsliced scored list; falls back to results when not provided.
     role_change_playoff_gate: passed through to _top_pick_reasons (see its docstring).
     """
@@ -371,14 +371,14 @@ def _assign_top_picks(
 
     # Assign is_top_pick and per-bucket rank (score-ordered within bucket)
     bucket_rank_counter: dict[str, int] = {b: 0 for b in _BUCKETS}
-    for player in sorted(selected, key=lambda p: p["opportunity_score"], reverse=True):
+    for player in sorted(selected, key=lambda p: p["opp_ranking_score"], reverse=True):
         bucket = player.get("_opp_bucket", "low_opp")
         bucket_rank_counter[bucket] += 1
         player["is_top_pick"] = True
         player["top_pick_rank"] = bucket_rank_counter[bucket]
         player["top_pick_reasons"] = _top_pick_reasons(player, bucket_groups[bucket], role_change_playoff_gate=role_change_playoff_gate)
 
-    # Top 3 ceiling: highest opportunity_score on the slate (results already sorted desc)
+    # Top 3 ceiling: highest opp_ranking_score on the slate (results already sorted desc)
     for i, player in enumerate(results[:3], start=1):
         player["is_top_ceiling"] = True
         player["top_ceiling_rank"] = i

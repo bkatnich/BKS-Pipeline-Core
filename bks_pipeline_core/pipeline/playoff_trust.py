@@ -7,7 +7,7 @@ Two collections written by grade_playoff_trust() after each playoff game:
 
    Trust score semantics:
      0 games graded → 0.0  (same as game 0 in old ramp — no data yet)
-     MAE < 15% of avg_opportunity_score → 1.0  (projecting accurately)
+     MAE < 15% of avg_opp_ranking_score → 1.0  (projecting accurately)
      MAE 15–25%          → 0.75
      MAE 25–40%          → 0.50
      MAE > 40%           → 0.25
@@ -66,7 +66,7 @@ def _compute_series_aggregates(game_log: list[dict[str, Any]]) -> dict[str, Any]
     sat out a blowout.
     """
     active = [g for g in game_log if not g.get("is_rest_game")]
-    active_scores = [g["opportunity_score"] for g in active if g.get("opportunity_score") is not None]
+    active_scores = [g["opp_ranking_score"] for g in active if g.get("opp_ranking_score") is not None]
     active_mins = [g["actual_minutes"] for g in active]
     n = len(active) or 1
     return {
@@ -83,7 +83,7 @@ def grade_playoff_trust(
     actuals: dict[str, dict[str, Any]],
     active_series: list[dict[str, Any]],
 ) -> int:
-    """Grade opportunity_score predictions vs actuals for active-series players.
+    """Grade opp_ranking_score predictions vs actuals for active-series players.
 
     Called from compute_accuracy after daily actuals are confirmed. Idempotent
     per date — if a player's trust doc already has this date in graded_dates,
@@ -93,9 +93,9 @@ def grade_playoff_trust(
         db:             Firestore client.
         date:           Game date just graded (YYYY-MM-DD).
         predictions:    Snapshot predictions dict keyed by player_id str.
-                        Each entry must have ``opportunity_score``.
+                        Each entry must have ``opp_ranking_score``.
         actuals:        Actuals dict keyed by player_id str.
-                        Each entry must have ``opportunity_score`` and ``dnp``.
+                        Each entry must have ``opp_ranking_score`` and ``dnp``.
         active_series:  List of series docs with status in ("scheduled", "active").
                         Used to build the active-team → series_id mapping.
 
@@ -128,8 +128,8 @@ def grade_playoff_trust(
         if act is None or act.get("dnp", False):
             continue
 
-        actual_score = act.get("opportunity_score")
-        predicted_score = pred.get("opportunity_score")
+        actual_score = act.get("opp_ranking_score")
+        predicted_score = pred.get("opp_ranking_score")
 
         if actual_score is None or predicted_score is None or float(predicted_score) <= 0:
             continue
@@ -193,7 +193,7 @@ def grade_playoff_trust(
         is_rest = float(act.get("actual_minutes") or 0.0) < get_active_config().playoff_rest_game_minutes_threshold
         new_game_entry: dict[str, Any] = {
             "date": date,
-            "opportunity_score": round(float(actual_score), 2),
+            "opp_ranking_score": round(float(actual_score), 2),
             "actual_minutes": round(float(act.get("actual_minutes") or 0.0), 1),
             "is_rest_game": is_rest,
         }

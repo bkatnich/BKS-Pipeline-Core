@@ -212,8 +212,8 @@ def compute_confidence_intervals(
             "p75": round(_ppf(0.75, fp_mu, fp_sigma), 1),
             "p90": round(_ppf(0.90, fp_mu, fp_sigma), 1),
         }
-        # Confidence that player beats their season baseline (opportunity_score)
-        avg_opp = float(result.get("opportunity_score") or 0)
+        # Confidence that player beats their season baseline (opp_ranking_score)
+        avg_opp = float(result.get("opp_ranking_score") or 0)
         if avg_opp > 0:
             ci["confidence_pct"] = round(normal_cdf_sf(avg_opp, fp_mu, fp_sigma), 3)
 

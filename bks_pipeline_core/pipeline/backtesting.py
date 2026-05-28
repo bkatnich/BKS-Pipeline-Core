@@ -134,15 +134,15 @@ def compute_signal_accuracy(
     """Compute per-signal calibration metrics.
 
     For each multiplier signal, measures:
-    - residual_correlation: Pearson r between (multiplier - 1.0) and opportunity_score
-    - hit_rate: when signal boosts (>1.0), fraction of players with above-average opportunity_score
+    - residual_correlation: Pearson r between (multiplier - 1.0) and opp_ranking_score
+    - hit_rate: when signal boosts (>1.0), fraction of players with above-average opp_ranking_score
     - fire_rate: fraction of players where signal deviates from 1.0
     """
-    rows = [r for r in joined if r.get("opportunity_score") is not None]
+    rows = [r for r in joined if r.get("opp_ranking_score") is not None]
     all_signals = [s for s in SIGNAL_MULTIPLIERS if not (disabled_signals and s in disabled_signals)]
 
     result: dict[str, dict[str, Any]] = {}
-    scores = [float(r["opportunity_score"]) for r in rows]
+    scores = [float(r["opp_ranking_score"]) for r in rows]
     mean_score = sum(scores) / len(scores) if scores else 0.0
 
     for sig in all_signals:

@@ -404,7 +404,7 @@ def minutes_environment_multiplier(
     }
 
     avg_min = player.get("avg_minutes")
-    avg_fs = avg_score_override if avg_score_override is not None else player.get("opportunity_score")
+    avg_fs = avg_score_override if avg_score_override is not None else player.get("opp_ranking_score")
     if not avg_min or avg_min <= 0 or not avg_fs or avg_fs <= 0:
         return neutral
 
@@ -442,7 +442,7 @@ def minutes_environment_multiplier(
     else:
         # Balanced: blowout risk pulls expected FP below baseline.
         # mean_fp already accounts for the blowout mixture model, so the
-        # ratio to opportunity_score captures the risk penalty directly.
+        # ratio to opp_ranking_score captures the risk penalty directly.
         raw_mult = mean_fp / avg_fs
 
     multiplier = max(_MULT_MIN, min(_MULT_MAX, raw_mult))

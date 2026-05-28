@@ -86,10 +86,10 @@ def run_comparison(
 
     signal_accuracy = compute_signal_accuracy(joined)
 
-    # Build top picks summary (top 10 by opportunity_score)
+    # Build top picks summary (top 10 by opp_ranking_score)
     joined_sorted = sorted(
         joined,
-        key=lambda r: float(r.get("opportunity_score") or 0),
+        key=lambda r: float(r.get("opp_ranking_score") or 0),
         reverse=True,
     )
     top_picks = [
@@ -97,7 +97,7 @@ def run_comparison(
             "player_id": r.get("player_id"),
             "player_name": f"{r.get('first_name', '')} {r.get('last_name', '')}".strip(),
             "position": r.get("position"),
-            "opportunity_score": round(float(r.get("opportunity_score") or 0), 1),
+            "opp_ranking_score": round(float(r.get("opp_ranking_score") or 0), 1),
         }
         for r in joined_sorted[:10]
     ]

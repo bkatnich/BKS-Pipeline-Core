@@ -41,7 +41,7 @@ def playoff_trend_trust(playoff_games: int, player_trust_score: float | None = N
 
 def playoff_cold_start_anchor(
     player: dict[str, Any],
-    rolling_avg_field: str = "opportunity_score",
+    rolling_avg_field: str = "opp_ranking_score",
 ) -> dict[str, Any]:
     """Compute a playoff-appropriate composite anchor for the opportunity score.
 
