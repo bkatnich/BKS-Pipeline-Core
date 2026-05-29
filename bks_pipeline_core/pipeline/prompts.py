@@ -17,7 +17,7 @@ ANALYSIS_MAX_TOKENS_CACHED = 3000  # on-demand path (GET handler, cache miss)
 ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 
 GAME_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
-GAME_INSIGHT_MAX_TOKENS = 1300
+GAME_INSIGHT_MAX_TOKENS = 1500
 
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 TRANSLATION_MAX_TOKENS = 512
@@ -205,6 +205,17 @@ _GAME_INSIGHT_SCHEMA = """{
     // Array of strings. ONLY players with non-Active injury status.
     // Format each: "Player Name (Status: comment)". Empty list if all healthy.
   ],
+  "prop_picks": [
+    // Array of objects — ONLY for players where prop_lines data was provided.
+    // Omit entirely (empty array) if no prop lines were supplied for this game.
+    // Include only lines where the edge justifies a directional call.
+    {
+      "player_id": "string — copy exactly from prop_lines input",
+      "market": "string — e.g. hits_0.5, total_bases_1.5",
+      "direction": "over" | "under",
+      "rationale": "1 sentence: why this line has edge given the matchup and model signal."
+    }
+  ],
   "line_movement_signal": "sharp" | "fade" | "neutral"
   // sharp: home ITT moved up >=0.5 runs (offense bet into)
   // fade:  home ITT moved down >=0.5 runs
@@ -368,6 +379,23 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
     else:
         key_player_cards_block = ""
 
+    # prop_lines_input: {player_id: [{market, line, direction, prob, edge}, ...]} — edge markets only
+    prop_lines_input: "dict[str, list[dict[str, object]]]" = dict(game_ctx.get("prop_lines_input") or {})  # type: ignore[arg-type]
+    if prop_lines_input:
+        prop_lines_rows = []
+        for pid, markets in prop_lines_input.items():
+            for m in markets:
+                market = str(m.get("market") or "")
+                direction = str(m.get("direction") or "over")
+                prob = m.get("prob")
+                edge = m.get("edge")
+                prob_str = f"{round(float(prob) * 100)}%" if prob is not None else ""
+                edge_str = f"+{round(float(edge) * 100)}pp" if edge is not None else ""
+                prop_lines_rows.append(f"  player_id={pid} | {market} {direction} | model={prob_str} | edge={edge_str}")
+        prop_lines_block = "\nProp lines with edge (use for prop_picks):\n" + "\n".join(prop_lines_rows)
+    else:
+        prop_lines_block = ""
+
     user = f"""Game: {away} @ {home} — {game_dt}
 {lines_block}
 Park: {park_label or "standard"}
@@ -377,7 +405,7 @@ Umpire: {umpire}
 {defense_block}
 
 Players (sorted by opportunity score):
-{player_block}{key_player_cards_block}
+{player_block}{key_player_cards_block}{prop_lines_block}
 
 Output schema (return only this JSON object, no prose):
 {_GAME_INSIGHT_SCHEMA}"""
