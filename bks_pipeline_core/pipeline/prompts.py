@@ -17,7 +17,7 @@ ANALYSIS_MAX_TOKENS_CACHED = 3000  # on-demand path (GET handler, cache miss)
 ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 
 GAME_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
-GAME_INSIGHT_MAX_TOKENS = 1024
+GAME_INSIGHT_MAX_TOKENS = 1300
 
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 TRANSLATION_MAX_TOKENS = 512
@@ -188,6 +188,14 @@ _GAME_INSIGHT_SCHEMA = """{
     // Array of 2-4 strings. Highest-edge players for DFS in this game (both teams).
     // Each string: player name + 1 sentence stating the edge (stat signal or matchup).
   ],
+  "key_player_cards": [
+    // Structured array — one object per player in key_players_input, same order.
+    // Do NOT add or remove players from the list provided. Do NOT change player_id values.
+    {
+      "player_id": "string — copy exactly from key_players_input",
+      "edge_sentence": "1 sentence: the sharpest DFS edge for this player today (signal + matchup context)."
+    }
+  ],
   "matchup_narrative": "2-3 sentences. Cover the total/spread angle and the best DFS construction angle.",
   "game_stack_targets": [
     // Array of 1-3 strings. Team(s) to stack and why (implied total, park, bullpen, SP matchup).
@@ -329,6 +337,37 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
     )
     player_block = "\n".join(_fmt_player(p) for p in sorted_players) or "No players available"
 
+    # key_player_cards_input: top N players pre-selected server-side — Claude writes edge_sentence only
+    key_player_cards_input: "list[dict[str, object]]" = list(game_ctx.get("key_player_cards_input") or [])  # type: ignore[arg-type]
+    if key_player_cards_input:
+        kp_lines = []
+        for kp in key_player_cards_input:
+            pid = str(kp.get("player_id") or "")
+            name = str(kp.get("name") or "")
+            team = str(kp.get("team") or "")
+            pos = str(kp.get("position") or "")
+            score = kp.get("opp_ranking_score")
+            floor_fp = kp.get("fp_floor")
+            ceil_fp = kp.get("fp_ceiling")
+            hot = kp.get("hot_streak")
+            cold = kp.get("cold_streak")
+            parts = [f"player_id={pid}", f"{name} ({team}, {pos})"]
+            if score is not None:
+                parts.append(f"opp={score:.1f}")
+            if floor_fp is not None and ceil_fp is not None:
+                parts.append(f"range={floor_fp:.1f}-{ceil_fp:.1f}")
+            if hot:
+                parts.append(f"hot({hot})")
+            elif cold:
+                parts.append(f"cold({cold})")
+            kp_lines.append(" | ".join(parts))
+        key_player_cards_block = (
+            "\nkey_players_input (write edge_sentence for each, preserve player_id):\n"
+            + "\n".join(kp_lines)
+        )
+    else:
+        key_player_cards_block = ""
+
     user = f"""Game: {away} @ {home} — {game_dt}
 {lines_block}
 Park: {park_label or "standard"}
@@ -338,7 +377,7 @@ Umpire: {umpire}
 {defense_block}
 
 Players (sorted by opportunity score):
-{player_block}
+{player_block}{key_player_cards_block}
 
 Output schema (return only this JSON object, no prose):
 {_GAME_INSIGHT_SCHEMA}"""
