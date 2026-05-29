@@ -16,7 +16,7 @@ ANALYSIS_MODEL = "claude-sonnet-4-6"
 ANALYSIS_MAX_TOKENS_CACHED = 3000  # on-demand path (GET handler, cache miss)
 ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 
-GAME_INSIGHT_MODEL = ANALYSIS_MODEL
+GAME_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
 GAME_INSIGHT_MAX_TOKENS = 1024
 
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
@@ -284,6 +284,7 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
         floor_fp = p.get("fp_floor")
         ceil_fp = p.get("fp_ceiling")
         bat_ord = p.get("batting_order")
+        confirmed_starter = p.get("is_confirmed_starter")
         hot = p.get("hot_streak")
         cold = p.get("cold_streak")
         recent = p.get("avg_pa_per_game")
@@ -301,7 +302,8 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
         if season is not None:
             parts.append(f"season={season:.1f}")
         if bat_ord:
-            parts.append(f"bat#{bat_ord}")
+            flag = "✓" if confirmed_starter else "?"
+            parts.append(f"bat#{bat_ord}{flag}")
         if hot:
             parts.append(f"hot({hot})")
         elif cold:
