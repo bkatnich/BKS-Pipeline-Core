@@ -22,21 +22,26 @@ _Response = https_fn.Response  # type: ignore[attr-defined]
 logger = logging.getLogger(__name__)
 
 
-def _get_or_create_user(uid: str) -> UserDoc:
+def _get_or_create_user(uid: str, email: str | None = None) -> UserDoc:
     """Read or lazily create a user doc in Firestore.
 
     On first authenticated request, creates a trial user. On subsequent
-    requests, reads the existing doc. If Firestore read fails, returns a
-    trial-tier user (graceful degradation — never hard-block due to infra error).
+    requests, reads the existing doc and upserts email if provided and changed.
+    If Firestore read fails, returns a trial-tier user (graceful degradation —
+    never hard-block due to infra error).
     """
     try:
         db = firestore.client(database_id=get_active_config().firestore_database_id)
         doc_ref = db.collection("users").document(uid)
         doc = doc_ref.get()
         if doc.exists:
-            return UserDoc.from_firestore(doc.to_dict())
+            user = UserDoc.from_firestore(doc.to_dict())
+            if email and user.email != email:
+                doc_ref.update({"email": email})
+                user.email = email
+            return user
         # First request — create trial user
-        user = UserDoc.create_trial(uid)
+        user = UserDoc.create_trial(uid, email=email)
         doc_ref.set(user.to_firestore())
         logger.info("Created trial user doc: uid=%s", uid)
         return user
@@ -126,7 +131,8 @@ def require_auth(func: Callable[..., Any]) -> Callable[..., Any]:
             return _Response("Service unavailable", status=503)
 
         uid = decoded.get("uid", "")
-        user_doc = _get_or_create_user(uid)
+        email = decoded.get("email") or None
+        user_doc = _get_or_create_user(uid, email=email)
         effective_tier = user_doc.effective_tier()
 
         req._uid = uid

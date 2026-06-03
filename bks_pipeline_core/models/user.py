@@ -29,6 +29,7 @@ class UserDoc:
     """Represents a `users/{uid}` Firestore document."""
 
     uid: str
+    email: str | None = None
     tier: str = TIER_TRIAL
     trial_started_at: str | None = None
     trial_expires_at: str | None = None
@@ -77,6 +78,7 @@ class UserDoc:
         self.updated_at = datetime.now(timezone.utc).isoformat()
         return {
             "uid": self.uid,
+            "email": self.email,
             "tier": self.tier,
             "trial_started_at": self.trial_started_at,
             "trial_expires_at": self.trial_expires_at,
@@ -98,6 +100,7 @@ class UserDoc:
         """Deserialize from Firestore document dict."""
         return cls(
             uid=data.get("uid", ""),
+            email=data.get("email"),
             tier=data.get("tier", TIER_EXPIRED),
             trial_started_at=data.get("trial_started_at"),
             trial_expires_at=data.get("trial_expires_at"),
@@ -115,12 +118,13 @@ class UserDoc:
         )
 
     @classmethod
-    def create_trial(cls, uid: str, platform: str | None = None) -> UserDoc:
+    def create_trial(cls, uid: str, platform: str | None = None, email: str | None = None) -> UserDoc:
         """Create a new user doc with a 7-day trial."""
         now = datetime.now(timezone.utc)
         expires = now + timedelta(days=TRIAL_DURATION_DAYS)
         return cls(
             uid=uid,
+            email=email,
             tier=TIER_TRIAL,
             trial_started_at=now.isoformat(),
             trial_expires_at=expires.isoformat(),
