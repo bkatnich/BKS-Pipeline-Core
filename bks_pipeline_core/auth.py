@@ -137,6 +137,7 @@ def require_auth(func: Callable[..., Any]) -> Callable[..., Any]:
 
         req._uid = uid
         req._tier = effective_tier
+        req._user_doc = user_doc
         logger.info("Auth OK: uid=%s tier=%s path=%s", uid, effective_tier, req.path)
         return func(req, *args, **kwargs)
 
