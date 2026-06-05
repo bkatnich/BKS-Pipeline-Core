@@ -19,6 +19,9 @@ ANALYSIS_MAX_TOKENS_BACKGROUND = 4096  # background generation path
 GAME_INSIGHT_MODEL = "claude-haiku-4-5-20251001"
 GAME_INSIGHT_MAX_TOKENS = 1500
 
+PROP_LLM_TAKE_MODEL = "claude-haiku-4-5-20251001"
+PROP_LLM_TAKE_MAX_TOKENS = 1800
+
 TRANSLATION_MODEL = "claude-haiku-4-5-20251001"
 TRANSLATION_MAX_TOKENS = 512
 
@@ -411,6 +414,97 @@ Output schema (return only this JSON object, no prose):
 {_GAME_INSIGHT_SCHEMA}"""
 
     return _GAME_INSIGHT_SYSTEM, user
+
+
+# ---------------------------------------------------------------------------
+# Per-prop LLM take (batched enrichment of top_prop_opportunities)
+# ---------------------------------------------------------------------------
+
+_PROP_LLM_TAKE_SCHEMA = """[
+  {
+    "player_id": "string — copy exactly from input",
+    "market": "string — copy exactly from input",
+    "agrees": true,
+    // true if you agree the model's direction has edge; false if you would fade it.
+    "confidence": "high" | "medium" | "low",
+    // high: strong evidence, clear edge; medium: directionally sound but some uncertainty;
+    // low: marginal edge, close call.
+    "suggested_value": 1.5,
+    // Your best estimate of the true expected value for this stat today (float, same units as line).
+    // May match or differ from predicted_value.
+    "rationale": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
+  }
+]"""
+
+_PROP_LLM_TAKE_SYSTEM = (
+    "You are a baseball prop betting analyst. "
+    "Evaluate each prop entry and return a JSON array — one object per prop, same order as input. "
+    "Base every claim strictly on the numbers provided. "
+    "No prose outside the JSON array. The first character of your response must be [."
+)
+
+
+def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, str]":
+    """Return (system, user) prompts for a batched prop LLM-take call.
+
+    Args:
+        props: The final top_prop_opportunities result list as built by
+               _build_top_prop_opportunities() in handlers.py. Each entry must
+               have player_id, player_name, team, market, stat (via 'stat' key),
+               and a blackkatt_instinct dict with direction, predicted_value,
+               probability, market_probability, edge_pp.
+    """
+    rows: list[str] = []
+    for p in props:
+        player_id = str(p.get("player_id") or "")
+        player_name = str(p.get("player_name") or "")
+        team = str(p.get("team") or "")
+        market = str(p.get("market") or "")
+        instinct: "dict[str, object]" = dict(p.get("blackkatt_instinct") or {})  # type: ignore[arg-type]
+        direction = str(instinct.get("direction") or "over")
+        predicted = instinct.get("predicted_value")
+        our_prob = instinct.get("probability")
+        mkt_prob = instinct.get("market_probability")
+        edge_pp = instinct.get("edge_pp")
+
+        predicted_str = f"{predicted}" if predicted is not None else "N/A"
+        our_prob_str = f"{round(float(our_prob) * 100)}%" if our_prob is not None else "N/A"
+        mkt_prob_str = f"{round(float(mkt_prob) * 100)}%" if mkt_prob is not None else "N/A"
+        edge_str = f"+{edge_pp}pp" if edge_pp is not None else "N/A"
+
+        parts = [
+            f"player_id={player_id}",
+            f"{player_name} ({team})" if team else player_name,
+            f"market={market}",
+            direction,
+            f"predicted={predicted_str}",
+            f"our_prob={our_prob_str}",
+            f"mkt_prob={mkt_prob_str}",
+            f"edge={edge_str}",
+        ]
+
+        bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
+        if bookmakers:
+            bk_parts = []
+            for bk_name, bk_data in bookmakers.items():
+                if isinstance(bk_data, dict):
+                    over_odds = bk_data.get("over_odds")
+                    under_odds = bk_data.get("under_odds")
+                    bk_parts.append(f"{bk_name}: over {over_odds} / under {under_odds}")
+            if bk_parts:
+                parts.append(" | ".join(bk_parts))
+
+        rows.append(" | ".join(parts))
+
+    props_block = "\n".join(rows) if rows else "(no props)"
+
+    user = f"""Props to evaluate ({len(props)} total):
+{props_block}
+
+Output schema (return only this JSON array, one object per prop, same order):
+{_PROP_LLM_TAKE_SCHEMA}"""
+
+    return _PROP_LLM_TAKE_SYSTEM, user
 
 
 # ---------------------------------------------------------------------------
