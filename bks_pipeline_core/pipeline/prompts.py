@@ -59,21 +59,7 @@ _ANALYSIS_SCHEMA = """{
   // "high"  — <10% of players show 0.0 FP or missing tags/trends
   // "medium" — 10-25% have data gaps
   // "low"   — >25% have data gaps or other quality concerns
-  "slate_narrative": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names. Kept for backward compat.",
-  "slate_narrative_sections": [
-    // Ordered array of { "title": string, "body": string } objects.
-    //
-    // 1. OVERVIEW (required first): title="" (empty string), body=2-3 sentences.
-    //    Lead with the best EMERGING play (not highest projection). Identify the best
-    //    game environment and the key construction angle.
-    //
-    // 2. ONE SECTION PER GAME (same order as Game Lines):
-    //    title="AWAY @ HOME" (e.g. "BOS @ MIL"), body=3-5 sentences.
-    //    Cover total/spread implications, then mid-tier trending players BEFORE stars.
-    //
-    // 3. LINEUP CONSTRUCTION (required last, title must be exactly "Lineup Construction"):
-    //    body=3-5 sentences. Frame the build around emerging plays as differentiators.
-  ]
+  "slate_insight": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names."
 }"""
 
 
@@ -173,7 +159,7 @@ def build_analysis_prompts(
 - Emerging over obvious. The primary value is surfacing NON-OBVIOUS plays. If the output is just a list of big names, it has failed.
 - Trend math must be real. When citing Recent vs Season avg, the numbers must match the input data exactly.
 - If Recent Avg FP or Season Avg FP is absent for a player, omit those claims for that player. Do not refuse to produce the JSON object.
-- Game sections in slate_narrative_sections must follow the same order as Game Lines.
+- slate_insight paragraphs must follow the same order as Game Lines.
 - Bold all player names with double asterisks.
 {salary_rules}
 {arena_rules}
@@ -432,7 +418,7 @@ _PROP_LLM_TAKE_SCHEMA = """[
     "suggested_value": 1.5,
     // Your best estimate of the true expected value for this stat today (float, same units as line).
     // May match or differ from predicted_value.
-    "rationale": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
+    "insight": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
   }
 ]"""
 
