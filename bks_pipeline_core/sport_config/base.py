@@ -172,3 +172,10 @@ class SportConfig:
     # change-detection hash, beyond the universal hash fields.
     # Example for MLB: ("season_avg", "season_obp", "season_ops", "woba_proxy", ...)
     trend_hash_field_extras: tuple[str, ...] = ()
+
+    # Sport-specific prompt fragments injected into TOML prompt templates at load time.
+    # Keys match {sport.<key>} placeholders in the TOML files.
+    # Every key referenced in a TOML file MUST be present here — missing keys raise
+    # KeyError at cold-start (deployment error, not a runtime fallback).
+    # Example for MLB: {"analyst_role": "baseball DFS analyst", ...}
+    prompt_context: dict[str, str] = field(default_factory=dict)

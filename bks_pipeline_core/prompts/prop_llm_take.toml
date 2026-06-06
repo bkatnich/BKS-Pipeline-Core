@@ -6,7 +6,7 @@ cache_system = false
 
 [system]
 text = """\
-You are a baseball prop betting analyst. \
+You are a {sport.prop_analyst_role}. \
 Evaluate each prop entry and return a JSON array — one object per prop, same order as input. \
 Base every claim strictly on the numbers provided. \
 No prose outside the JSON array. The first character of your response must be [.\
@@ -15,7 +15,7 @@ No prose outside the JSON array. The first character of your response must be [.
 [schema]
 text = """\
 [
-  {
+  {{
     "player_id": "string — copy exactly from input",
     "market": "string — copy exactly from input",
     "agrees": true,
@@ -27,6 +27,6 @@ text = """\
     // Your best estimate of the true expected value for this stat today (float, same units as line).
     // May match or differ from predicted_value.
     "insight": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
-  }
+  }}
 ]\
 """

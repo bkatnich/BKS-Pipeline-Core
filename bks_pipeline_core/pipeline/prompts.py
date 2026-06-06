@@ -8,7 +8,7 @@ Rules:
   (lru_cached, so one file read per cold start).
 """
 
-from bks_pipeline_core.prompts.loader import load_prompt, prompt_version
+from bks_pipeline_core.prompts.loader import load_prompt, prompt_version, resolve_sport_tokens
 from bks_pipeline_core.sport_config import get_active_config
 
 # ---------------------------------------------------------------------------
@@ -66,8 +66,12 @@ def build_analysis_prompts(
     """
     cfg = load_prompt("analysis")
     sport = get_active_config()
+    ctx = sport.prompt_context
 
-    system = str((cfg["system"])["text"]).format(  # type: ignore[index]
+    system = resolve_sport_tokens(
+        str((cfg["system"])["text"]),  # type: ignore[index]
+        ctx,
+    ).format(
         sport_display_name=sport.sport_display_name,
         lang_instruction=lang_instruction,
     )
@@ -109,7 +113,11 @@ def build_analysis_prompts(
         else "- Salary data is not available for this slate. Do not reference salary, price, value, cost, or bargain."
     )
 
-    user = str((cfg["user"])["template"]).format(  # type: ignore[index]
+    schema = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
+    user = resolve_sport_tokens(
+        str((cfg["user"])["template"]),  # type: ignore[index]
+        ctx,
+    ).format(
         today_et=today_et,
         game_count=game_count,
         sport_key=sport.sport_collection_key.upper(),
@@ -121,7 +129,7 @@ def build_analysis_prompts(
         series_context_block=series_context_block,
         salary_column_note=salary_column_note,
         player_rows=player_rows,
-        schema=str((cfg["schema"])["text"]),  # type: ignore[index]
+        schema=schema,
         salary_rules=salary_rules,
         arena_rules=arena_rules,
         series_rules=series_rules,
@@ -155,8 +163,9 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
             players,  (list of snapshot entry dicts, both teams)
     """
     cfg = load_prompt("game_insight")
-    system: str = str((cfg["system"])["text"])  # type: ignore[index]
-    schema: str = str((cfg["schema"])["text"])  # type: ignore[index]
+    ctx = get_active_config().prompt_context
+    system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
+    schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
 
     home: str = str(game_ctx.get("home_team") or "")
     away: str = str(game_ctx.get("away_team") or "")
@@ -332,8 +341,9 @@ def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, 
                edge_pp.
     """
     cfg = load_prompt("prop_llm_take")
-    system: str = str((cfg["system"])["text"])  # type: ignore[index]
-    schema: str = str((cfg["schema"])["text"])  # type: ignore[index]
+    ctx = get_active_config().prompt_context
+    system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
+    schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
 
     rows: list[str] = []
     for p in props:
@@ -454,9 +464,13 @@ def call_claude(
 def build_translation_prompt(full_lang_name: str, context: str = "") -> str:
     """Return the system prompt for the translation call."""
     cfg = load_prompt("translation")
+    sport = get_active_config()
     context_hint = f" Context: {context}." if context else ""
-    return str((cfg["system"])["text"]).format(  # type: ignore[index]
-        sport_key=get_active_config().sport_collection_key.upper(),
+    return resolve_sport_tokens(
+        str((cfg["system"])["text"]),  # type: ignore[index]
+        sport.prompt_context,
+    ).format(
+        sport_key=sport.sport_collection_key.upper(),
         full_lang_name=full_lang_name,
         context_hint=context_hint,
     )

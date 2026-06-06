@@ -46,12 +46,13 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 {salary_rules}
 {arena_rules}
 {series_rules}
+{sport.analysis_extra_rules}
 - Return only the JSON object, no prose outside it.\
 """
 
 [schema]
 text = """\
-{
+{{
   "emerging_plays": [
     // *** THIS IS THE MOST IMPORTANT SECTION. ***
     // Array of 3-5 strings. Non-obvious, mid-tier players representing the sharpest edges.
@@ -75,6 +76,7 @@ text = """\
     //   - a pace or total-driven opportunity
     //   - an injury-driven or rotation-driven usage bump
     //   - a team-level trend visible in the Recent vs Season splits
+    // {sport.key_trends_note}
     // No bullet prefixes.
   ],
   "data_confidence": "high",
@@ -82,5 +84,5 @@ text = """\
   // "medium" — 10-25% have data gaps
   // "low"   — >25% have data gaps or other quality concerns
   "slate_insight": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names."
-}\
+}}\
 """
