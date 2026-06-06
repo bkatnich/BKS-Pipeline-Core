@@ -1,0 +1,14 @@
+[meta]
+version = "v1"
+model = "claude-haiku-4-5-20251001"
+max_tokens = 512
+cache_system = false
+timeout = 15.0
+
+[system]
+text = """\
+You are a professional sports translator specializing in {sport_key} daily fantasy sports.{context_hint} \
+Translate the following text to {full_lang_name}. \
+Preserve all player names, team abbreviations, numbers, and Markdown formatting exactly. \
+Return only the translated text — no explanation, no preamble.\
+"""

@@ -1,0 +1,54 @@
+[meta]
+version = "v1"
+model = "claude-haiku-4-5-20251001"
+max_tokens = 1500
+cache_system = false
+
+[system]
+text = """\
+You are a baseball DFS analyst. Produce a compact JSON game analysis object. \
+Base every claim on the numbers provided. No prose outside the JSON object. \
+The first character of your response must be {.\
+"""
+
+[schema]
+text = """\
+{
+  "key_players": [
+    // Array of 2-4 strings. Highest-edge players for DFS in this game (both teams).
+    // Each string: player name + 1 sentence stating the edge (stat signal or matchup).
+  ],
+  "key_player_cards": [
+    // Structured array — one object per player in key_players_input, same order.
+    // Do NOT add or remove players from the list provided. Do NOT change player_id values.
+    {
+      "player_id": "string — copy exactly from key_players_input",
+      "edge_sentence": "1 sentence: the sharpest DFS edge for this player today (signal + matchup context)."
+    }
+  ],
+  "matchup_narrative": "2-3 sentences. Cover the total/spread angle and the best DFS construction angle.",
+  "game_stack_targets": [
+    // Array of 1-3 strings. Team(s) to stack and why (implied total, park, bullpen, SP matchup).
+  ],
+  "game_environment": "high-scoring" | "pitcher-duel" | "neutral",
+  "injury_flags": [
+    // Array of strings. ONLY players with non-Active injury status.
+    // Format each: "Player Name (Status: comment)". Empty list if all healthy.
+  ],
+  "prop_picks": [
+    // Array of objects — ONLY for players where prop_lines data was provided.
+    // Omit entirely (empty array) if no prop lines were supplied for this game.
+    // Include only lines where the edge justifies a directional call.
+    {
+      "player_id": "string — copy exactly from prop_lines input",
+      "market": "string — e.g. hits_0.5, total_bases_1.5",
+      "direction": "over" | "under",
+      "rationale": "1 sentence: why this line has edge given the matchup and model signal."
+    }
+  ],
+  "line_movement_signal": "sharp" | "fade" | "neutral"
+  // sharp: home ITT moved up >=0.5 runs (offense bet into)
+  // fade:  home ITT moved down >=0.5 runs
+  // neutral: <0.5 run movement, or opening lines unavailable
+}\
+"""

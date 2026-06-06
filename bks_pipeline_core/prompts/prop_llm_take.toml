@@ -1,0 +1,32 @@
+[meta]
+version = "v1"
+model = "claude-haiku-4-5-20251001"
+max_tokens = 1800
+cache_system = false
+
+[system]
+text = """\
+You are a baseball prop betting analyst. \
+Evaluate each prop entry and return a JSON array — one object per prop, same order as input. \
+Base every claim strictly on the numbers provided. \
+No prose outside the JSON array. The first character of your response must be [.\
+"""
+
+[schema]
+text = """\
+[
+  {
+    "player_id": "string — copy exactly from input",
+    "market": "string — copy exactly from input",
+    "agrees": true,
+    // true if you agree the model's direction has edge; false if you would fade it.
+    "confidence": "high" | "medium" | "low",
+    // high: strong evidence, clear edge; medium: directionally sound but some uncertainty;
+    // low: marginal edge, close call.
+    "suggested_value": 1.5,
+    // Your best estimate of the true expected value for this stat today (float, same units as line).
+    // May match or differ from predicted_value.
+    "insight": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
+  }
+]\
+"""
