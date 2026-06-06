@@ -22,6 +22,9 @@ dev = ["pytest>=9.0", "ruff"]
 where = ["."]
 include = ["bks_pipeline_core*"]
 
+[tool.setuptools.package-data]
+"bks_pipeline_core.prompts" = ["*.toml"]
+
 [tool.ruff]
 line-length = 160
 
