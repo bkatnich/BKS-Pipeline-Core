@@ -112,7 +112,10 @@ def build_prop_predictions(
 
             # Edge = calibrated model prob - no-vig market prob.
             edge = round(calibrated_prob - nv_prob, 4)
-            has_edge = edge >= get_active_config().prop_edge_display_threshold
+            has_edge = abs(edge) >= get_active_config().prop_edge_display_threshold
+
+            _dir = "over" if edge > 0 else "under"
+            _disp_prob = calibrated_prob if _dir == "over" else round(1.0 - calibrated_prob, 4)
 
             line_key = f"{stat}_{line_val}"
             prop_line_docs[line_key] = {
@@ -126,7 +129,7 @@ def build_prop_predictions(
                 "calibrated_prob_over": round(calibrated_prob, 4),
                 "edge": edge,
                 "has_edge": has_edge,
-                "display_label": f"{round(calibrated_prob * 100)}% Over {line_val} {stat.upper()}",
+                "display_label": f"{round(_disp_prob * 100)}% {_dir.capitalize()} {line_val} {stat.upper()}",
             }
 
         if not prop_line_docs:
