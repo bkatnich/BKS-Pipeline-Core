@@ -49,5 +49,7 @@ text = """\
   ],
   "line_movement_signal": "sharp" | "fade" | "neutral"
   // {sport.line_movement_note}
+  // REQUIRED: If opening line data (ou_open or home_implied_open) is absent, you MUST
+  // return "neutral". Do not infer movement from closing lines alone.
 }}\
 """

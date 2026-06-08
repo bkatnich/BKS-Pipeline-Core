@@ -42,7 +42,12 @@ _LANG_NAMES: dict[str, str] = {
 
 def lang_name(lang: str) -> str:
     """Return the full language name for a given IETF tag, e.g. 'es' -> 'Spanish'."""
-    return _LANG_NAMES.get(lang.lower(), lang)
+    key = lang.lower()
+    name = _LANG_NAMES.get(key)
+    if name is None:
+        logger.warning("i18n: unknown language tag %r — passing raw tag to Claude; add to _LANG_NAMES if recurrent", lang)
+        return lang
+    return name
 
 
 def translate(

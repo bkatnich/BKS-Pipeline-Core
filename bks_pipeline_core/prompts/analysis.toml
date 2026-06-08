@@ -48,6 +48,7 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 {arena_rules}
 {series_rules}
 {sport.analysis_extra_rules}
+- If game_count is 0 or player_rows is empty, return a valid JSON object with empty arrays for emerging_plays, top_projections, key_trends, and prop_picks; set data_confidence to "low"; set slate_insight to "No games scheduled for this slate."
 - Return only the JSON object, no prose outside it.\
 """
 
@@ -84,6 +85,9 @@ text = """\
   // "high"  — <10% of players show 0.0 FP or missing tags/trends
   // "medium" — 10-25% have data gaps
   // "low"   — >25% have data gaps or other quality concerns
+  // NOTE: 0.0 FP is NOT a data gap at the start of a new season (first ~3 days) when
+  // no games have been played yet. Do not downgrade confidence solely because all
+  // Recent Avg FP values are 0.0 early in the season.
   "slate_insight": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names."
 }}\
 """
