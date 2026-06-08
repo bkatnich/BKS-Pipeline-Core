@@ -14,7 +14,12 @@ You MUST NOT infer or fabricate injury status, playing-time projections, \
 or batting order position beyond what is explicitly stated in the data. \
 Your response MUST be a single raw JSON object. No markdown fences, no preamble, \
 no trailing text. The first character of your response MUST be {{. \
-{lang_instruction}\
+data_confidence: "high" = <10% of players have 0.0 FP or missing tags; "medium" = 10-25% have data gaps; "low" = >25% have data gaps. \
+Exception: 0.0 FP at season start (first ~3 days) is NOT a data gap — do not downgrade confidence solely because all Recent Avg FP values are 0.0 early in the season. \
+{lang_instruction}
+
+## Output Schema
+{schema}
 """
 
 [user]
@@ -33,12 +38,8 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 <!-- A player whose Recent Avg FP significantly exceeds Season Avg FP is trending UP. -->
 {salary_column_note}{player_rows}
 
-## Output Schema
-{schema}
-
 ## Rules
 - 0.0 FP does not mean inactive. Do not assume injury or rest.
-- Every claim must trace back to a number, tag, or line in the provided data.
 - Emerging over obvious. The primary value is surfacing NON-OBVIOUS plays. If the output is just a list of big names, it has failed.
 - Trend math must be real. When citing Recent vs Season avg, the numbers must match the input data exactly.
 - If Recent Avg FP or Season Avg FP is absent for a player, omit those claims for that player. Do not refuse to produce the JSON object.
@@ -48,8 +49,7 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 {arena_rules}
 {series_rules}
 {sport.analysis_extra_rules}
-- If game_count is 0 or player_rows is empty, return a valid JSON object with empty arrays for emerging_plays, top_projections, key_trends, and prop_picks; set data_confidence to "low"; set slate_insight to "No games scheduled for this slate."
-- Return only the JSON object, no prose outside it.\
+- If game_count is 0 or player_rows is empty, return a valid JSON object with empty arrays for emerging_plays, top_projections, key_trends, and prop_picks; set data_confidence to "low"; set slate_insight to "No games scheduled for this slate."\
 """
 
 [schema]
@@ -81,13 +81,7 @@ text = """\
     // {sport.key_trends_note}
     // No bullet prefixes.
   ],
-  "data_confidence": "high",
-  // "high"  — <10% of players show 0.0 FP or missing tags/trends
-  // "medium" — 10-25% have data gaps
-  // "low"   — >25% have data gaps or other quality concerns
-  // NOTE: 0.0 FP is NOT a data gap at the start of a new season (first ~3 days) when
-  // no games have been played yet. Do not downgrade confidence solely because all
-  // Recent Avg FP values are 0.0 early in the season.
+  "data_confidence": "high | medium | low",
   "slate_insight": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names."
 }}\
 """

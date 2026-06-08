@@ -68,12 +68,14 @@ def build_analysis_prompts(
     sport = get_active_config()
     ctx = sport.prompt_context
 
+    schema = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
     system = resolve_sport_tokens(
         str((cfg["system"])["text"]),  # type: ignore[index]
         ctx,
     ).format(
         sport_display_name=sport.sport_display_name,
         lang_instruction=lang_instruction,
+        schema=schema,
     )
 
     playoff_context = (
@@ -90,21 +92,16 @@ def build_analysis_prompts(
     series_context_block = f"\n## Playoff Series Context\n{series_context_text}\n" if series_context_text else ""
 
     series_rules = (
-        "- Playoff Series Context is provided. Factor in series score (desperation vs. close-out), "
-        "game number, and per-player series trends when assessing upside. A team trailing 3-1 faces "
-        "must-win pressure; a team up 3-1 may rest stars in a blowout. Players whose series avg FP "
-        "exceeds their season avg are trending into this matchup — prioritize them."
+        "- Series Context provided: factor score (desperation vs. rest risk), game number, and per-player series avg vs season avg."
         if series_context_text
         else ""
     )
     arena_rules = (
-        "- Arena factors are provided. Altitude (Denver 5,280 ft) and long road trips suppress "
-        "visiting team stamina and shooting efficiency — especially in Q4. Factor this into "
-        "ceiling projections for visiting players."
+        "- Arena factors provided: apply altitude/travel effects to ceiling projections for visiting players."
         if arena_context_text
         else ""
     )
-    salary_column_note = "<!-- Salary = slate salary. -->\n" if salary_medians_text else "<!-- Salary column is N/A — no slate salary data available. -->\n"
+    salary_column_note = "<!-- Salary = slate salary. -->\n" if salary_medians_text else ""
     salary_rules = (
         "- Salary context is provided. Use it to identify value plays (high projection relative to salary) "
         "and salary traps (expensive players whose projection does not justify the price). "
@@ -113,7 +110,6 @@ def build_analysis_prompts(
         else "- Salary data is not available for this slate. Do not reference salary, price, value, cost, or bargain."
     )
 
-    schema = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
     user = resolve_sport_tokens(
         str((cfg["user"])["template"]),  # type: ignore[index]
         ctx,
@@ -129,7 +125,6 @@ def build_analysis_prompts(
         series_context_block=series_context_block,
         salary_column_note=salary_column_note,
         player_rows=player_rows,
-        schema=schema,
         salary_rules=salary_rules,
         arena_rules=arena_rules,
         series_rules=series_rules,

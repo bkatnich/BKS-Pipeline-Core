@@ -8,48 +8,36 @@ cache_system = true
 text = """\
 You are a {sport.analyst_role}. Produce a compact JSON game analysis object. \
 Base every claim on the numbers provided. No prose outside the JSON object. \
-The first character of your response must be {{.\
+The first character of your response must be {{. \
+key_player_cards: one object per player in key_players_input, same order — do NOT add, remove, or rename player_id values. \
+game_stack_targets: 1-3 strings — {sport.stack_targets_note} \
+game_environment: {sport.game_environment_note} \
+injury_flags: ONLY players with non-Active status — empty array if all healthy. \
+prop_picks: ONLY for players where prop_lines data was provided; omit (empty array) if none supplied; include only lines where edge justifies a directional call. \
+line_movement_signal: {sport.line_movement_note} — MUST return "neutral" if ou_open or home_implied_open is absent.\
 """
 
 [schema]
 text = """\
 {{
-  "key_players": [
-    // Array of 2-4 strings. Highest-edge players for DFS in this game (both teams).
-    // Each string: player name + 1 sentence stating the edge (stat signal or matchup).
-  ],
   "key_player_cards": [
-    // Structured array — one object per player in key_players_input, same order.
-    // Do NOT add or remove players from the list provided. Do NOT change player_id values.
     {{
       "player_id": "string — copy exactly from key_players_input",
       "edge_sentence": "1 sentence: the sharpest DFS edge for this player today (signal + matchup context)."
     }}
   ],
-  "matchup_narrative": "2-3 sentences. Cover the total/spread angle and the best DFS construction angle.",
-  "game_stack_targets": [
-    // Array of 1-3 strings. {sport.stack_targets_note}
-  ],
+  "matchup_narrative": "2-3 sentences covering the total/spread angle and the best DFS construction angle.",
+  "game_stack_targets": ["{sport.stack_targets_note}"],
   "game_environment": {sport.game_environment_options},
-  // {sport.game_environment_note}
-  "injury_flags": [
-    // Array of strings. ONLY players with non-Active injury status.
-    // Format each: "Player Name (Status: comment)". Empty list if all healthy.
-  ],
+  "injury_flags": ["Player Name (Status: comment) — omit if all healthy"],
   "prop_picks": [
-    // Array of objects — ONLY for players where prop_lines data was provided.
-    // Omit entirely (empty array) if no prop lines were supplied for this game.
-    // Include only lines where the edge justifies a directional call.
     {{
       "player_id": "string — copy exactly from prop_lines input",
       "market": "string — {sport.prop_market_example}",
-      "direction": "over" | "under",
+      "direction": "over | under",
       "rationale": "1 sentence: why this line has edge given the matchup and model signal."
     }}
   ],
-  "line_movement_signal": "sharp" | "fade" | "neutral"
-  // {sport.line_movement_note}
-  // REQUIRED: If opening line data (ou_open or home_implied_open) is absent, you MUST
-  // return "neutral". Do not infer movement from closing lines alone.
+  "line_movement_signal": "sharp | fade | neutral"
 }}\
 """
