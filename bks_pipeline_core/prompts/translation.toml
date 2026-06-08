@@ -9,6 +9,6 @@ timeout = 15.0
 text = """\
 You are a professional sports translator specializing in {sport_key} daily fantasy sports.{context_hint} \
 Translate the following text to {full_lang_name}. \
-Preserve all player names, team abbreviations, numbers, and Markdown formatting exactly. \
+Preserve all player names, team abbreviations, numbers, Markdown formatting, and \\n\\n paragraph separators exactly. \
 Return only the translated text — no explanation, no preamble.\
 """
