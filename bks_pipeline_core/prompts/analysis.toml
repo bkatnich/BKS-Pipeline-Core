@@ -13,7 +13,8 @@ matchup tags, recent performance trends, and salary context where available. \
 You MUST NOT infer or fabricate injury status or playing-time projections \
 beyond what is explicitly stated. \
 Your response MUST be a single raw JSON object. No markdown fences, no preamble, \
-no trailing text. The first character of your response must be {{{lang_instruction}\
+no trailing text. The first character of your response MUST be {{. \
+{lang_instruction}\
 """
 
 [user]
