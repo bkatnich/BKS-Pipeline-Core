@@ -16,6 +16,10 @@ Your response MUST be a single raw JSON object. No markdown fences, no preamble,
 no trailing text. The first character of your response MUST be {{. \
 data_confidence: "high" = <10% of players have 0.0 FP or missing tags; "medium" = 10-25% have data gaps; "low" = >25% have data gaps. \
 Exception: 0.0 FP at season start (first ~3 days) is NOT a data gap — do not downgrade confidence solely because all Recent Avg FP values are 0.0 early in the season. \
+emerging_plays: 3-5 non-obvious mid-tier players where ALL apply: Recent Avg FP notably above Season Avg FP; NOT a top-10 projected superstar unless trend is extreme; matchup or environment supports upside. \
+If fewer than 3 qualifying players exist on the slate, include as many as qualify — do not manufacture plays to hit the count. \
+top_projections: 2-3 highest-projected players, 1-2 sentences each. \
+key_trends: 3-5 strings covering matchup edges, pace/total opportunities, usage bumps, or team-level splits — {sport.key_trends_note} \
 {lang_instruction}
 
 ## Output Schema
@@ -55,32 +59,9 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 [schema]
 text = """\
 {{
-  "emerging_plays": [
-    // *** THIS IS THE MOST IMPORTANT SECTION. ***
-    // Array of 3-5 strings. Non-obvious, mid-tier players representing the sharpest edges.
-    //
-    // Selection criteria (ALL must apply):
-    //   1. Recent Avg FP is notably higher than Season Avg FP (trending up).
-    //   2. NOT a consensus top-tier superstar (exclude top ~10 projected players unless
-    //      their trend is extreme).
-    //   3. Matchup tags or game environment support continued upside.
-    //
-    // Each string: 2-3 sentences covering the trend (Recent vs Season avg and what's
-    // driving it), the matchup edge or game environment today, and the upside case.
-  ],
-  "top_projections": [
-    // Array of 2-3 strings. The slate's highest-projected players.
-    // BRIEF — 1-2 sentences each: projected FP, matchup note, done.
-  ],
-  "key_trends": [
-    // Array of 3-5 strings. Each covers one of:
-    //   - a matchup edge (soft/tough tags vs. player strength)
-    //   - a pace or total-driven opportunity
-    //   - an injury-driven or rotation-driven usage bump
-    //   - a team-level trend visible in the Recent vs Season splits
-    // {sport.key_trends_note}
-    // No bullet prefixes.
-  ],
+  "emerging_plays": ["2-3 sentence string per player: trend (Recent vs Season avg + driver), matchup/environment edge, upside case"],
+  "top_projections": ["1-2 sentence string per player: projected FP + matchup note"],
+  "key_trends": ["1 string per trend — no bullet prefixes"],
   "data_confidence": "high | medium | low",
   "slate_insight": "Single string — all game paragraphs joined by \\n\\n, then the construction paragraph. **Bold** player names."
 }}\
