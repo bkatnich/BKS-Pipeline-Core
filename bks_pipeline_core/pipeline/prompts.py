@@ -344,6 +344,7 @@ def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, 
         mkt_prob_str = f"{round(float(mkt_prob) * 100)}%" if mkt_prob is not None else "N/A"
         edge_str = f"+{edge_pp}pp" if edge_pp is not None else "N/A"
 
+        sharp_flag = "Sharp" if p.get("is_sharp") else "Soft"
         parts = [
             f"player_id={player_id}",
             f"{player_name} ({team})" if team else player_name,
@@ -353,6 +354,7 @@ def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, 
             f"our_prob={our_prob_str}",
             f"mkt_prob={mkt_prob_str}",
             f"edge={edge_str}",
+            sharp_flag,
         ]
 
         bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
