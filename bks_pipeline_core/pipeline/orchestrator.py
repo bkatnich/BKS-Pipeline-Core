@@ -17,7 +17,7 @@ Usage in a sport project's pipeline/orchestrator.py:
         fetch_and_store_odds as _core_fetch_and_store_odds,
         fetch_and_store_today_games,
         fetch_and_store_upcoming_games,
-        fetch_and_store_espn_event_ids,
+        fetch_and_store_lineup_event_ids,
         fetch_and_store_lineup_status,
         enqueue_trend_retry,
     )
@@ -859,19 +859,19 @@ def fetch_and_store_odds(
         logger.warning("fetch_and_store_odds: game totals enrichment failed (non-fatal)")
 
     try:
-        fetch_and_store_espn_event_ids(db, today_et, lineups_provider)
+        fetch_and_store_lineup_event_ids(db, today_et, lineups_provider)
     except Exception:
-        logger.warning("fetch_and_store_odds: ESPN event ID capture failed (non-fatal)")
+        logger.warning("fetch_and_store_odds: lineup event ID capture failed (non-fatal)")
 
     return len(raw_odds)
 
 
-def fetch_and_store_espn_event_ids(
+def fetch_and_store_lineup_event_ids(
     db: Any,
     date_str: str,
     lineups_provider: _LineupsProviderProto,
 ) -> int:
-    """Populate event_id on matchup docs for date_str.
+    """Populate lineup_event_id on matchup docs for date_str.
 
     Returns the number of matchup docs updated.
     """
@@ -894,12 +894,12 @@ def fetch_and_store_espn_event_ids(
         visitor = d.get("visitor_team_abbr", "")
         eid = event_map.get((home, visitor))
         if eid:
-            batch.set(matchups_ref.document(doc.id), {"espn_event_id": eid}, merge=True)
+            batch.set(matchups_ref.document(doc.id), {"lineup_event_id": eid}, merge=True)
             count += 1
 
     if count:
         batch.commit()
-    logger.info("fetch_and_store_espn_event_ids: updated %d matchup docs for %s", count, date_str)
+    logger.info("fetch_and_store_lineup_event_ids: updated %d matchup docs for %s", count, date_str)
     return count
 
 
@@ -929,8 +929,8 @@ def fetch_and_store_lineup_status(
         if d.get("lineups_confirmed"):
             continue
 
-        espn_event_id = d.get("espn_event_id")
-        if not espn_event_id:
+        lineup_event_id = d.get("lineup_event_id")
+        if not lineup_event_id:
             continue
 
         game_dt_raw = d.get("game_datetime")
@@ -946,7 +946,7 @@ def fetch_and_store_lineup_status(
         if not (window_start <= game_dt <= window_end):
             continue
 
-        lineup = lineups_provider.fetch_game_lineups(espn_event_id, logger)
+        lineup = lineups_provider.fetch_game_lineups(lineup_event_id, logger)
         if not lineup.get("lineups_available"):
             continue
 
@@ -962,7 +962,11 @@ def fetch_and_store_lineup_status(
             if len(starters) >= 9:
                 confirmed_team_count += 1
 
-            starter_names: set[str] = {e["display_name"].lower() for e in starters}
+            # batting_order_map: display_name.lower() → 1-based slot (position in starters list)
+            batting_order_map: dict[str, int] = {
+                e["display_name"].lower(): i + 1 for i, e in enumerate(starters)
+            }
+            starter_names: set[str] = set(batting_order_map.keys())
             bench_names: set[str] = {e["display_name"].lower() for e in bench}
             all_names = starter_names | bench_names
 
@@ -979,15 +983,17 @@ def fetch_and_store_lineup_status(
                 full_name = f"{first} {last}".strip().lower()
                 last_only = last.lower()
 
-                if full_name in starter_names:
-                    new_is_starter: bool | None = True
-                elif full_name in bench_names:
-                    new_is_starter = False
+                matched_name: str | None = None
+                if full_name in all_names:
+                    matched_name = full_name
                 elif last_only and any(last_only == n.split()[-1] for n in all_names):
-                    matched = next(n for n in all_names if n.split()[-1] == last_only)
-                    new_is_starter = matched in starter_names
-                else:
+                    matched_name = next(n for n in all_names if n.split()[-1] == last_only)
+
+                if matched_name is None:
                     continue
+
+                new_is_starter: bool | None = matched_name in starter_names
+                batting_order: int | None = batting_order_map.get(matched_name)
 
                 existing = p.get("is_confirmed_starter")
                 if existing == new_is_starter:
@@ -1001,13 +1007,16 @@ def fetch_and_store_lineup_status(
                         "previous_is_starter": existing,
                     }
                 )
+                update: dict[str, Any] = {
+                    "is_confirmed_starter": new_is_starter,
+                    "lineup_confirmed_at": now_iso,
+                    "lineup_source": "mlb_stats",
+                }
+                if batting_order is not None:
+                    update["batting_order"] = batting_order
                 batch.set(
                     db.collection("players").document(pdoc.id),
-                    {
-                        "is_confirmed_starter": new_is_starter,
-                        "lineup_confirmed_at": now_iso,
-                        "lineup_source": "espn",
-                    },
+                    update,
                     merge=True,
                 )
                 batch_count += 1
