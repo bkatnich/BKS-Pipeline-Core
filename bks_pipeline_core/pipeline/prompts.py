@@ -47,22 +47,22 @@ def build_analysis_prompts(
     player_rows: str,
     round_description: str = "slate",
     lang_instruction: str = "",
-    salary_medians_text: str = "",
     arena_context_text: str = "",
     series_context_text: str = "",
+    prop_pick_count: int = 5,
 ) -> tuple[str, str]:
-    """Return (system, user) prompts for slate analysis.
+    """Return (system, user) prompts for slate props analysis.
 
     Args:
         today_et: Date string in ET, e.g. "2026-05-09".
         game_count: Number of games on the slate.
         games_text: Pre-formatted game lines block (Away @ Home | Spread | Total).
-        player_rows: Pre-formatted player pool block.
+        player_rows: Pre-formatted prop rows block (pre-screened, sharp-first).
         round_description: "slate", "regular season", or "playoff (Round X)".
         lang_instruction: Optional i18n suffix appended to the system prompt.
-        salary_medians_text: Optional pre-formatted position salary medians line.
         arena_context_text: Optional pre-formatted arena factors block.
         series_context_text: Optional pre-formatted playoff series context block.
+        prop_pick_count: Number of prop picks to select (default 5).
     """
     cfg = load_prompt("analysis")
     sport = get_active_config()
@@ -76,38 +76,27 @@ def build_analysis_prompts(
         sport_display_name=sport.sport_display_name,
         lang_instruction=lang_instruction,
         schema=schema,
+        prop_pick_count=prop_pick_count,
     )
 
     playoff_context = (
-        "If this is a playoff slate, prioritize identifying role players and mid-tier options "
-        "whose usage, minutes, or role has expanded during the postseason. Playoff rotations "
-        "tighten to 8-9 players, which concentrates opportunity. Look for non-stars absorbing "
-        "meaningful touches — these are often the highest-edge plays on the slate."
+        "Playoff context: factor series score (desperation vs. rest risk), pitcher usage, and bullpen availability when assessing prop direction."
         if "playoff" in round_description.lower()
-        else "Give weight to pace-of-play edges and rest/back-to-back situations."
+        else "Factor pace-of-play edges, bullpen fatigue, and weather where relevant."
     )
 
-    salary_context_block = f"\n## Salary Context\n{salary_medians_text}\n" if salary_medians_text else ""
     arena_context_block = f"\n## Arena Factors\n{arena_context_text}\n" if arena_context_text else ""
     series_context_block = f"\n## Playoff Series Context\n{series_context_text}\n" if series_context_text else ""
 
     series_rules = (
-        "- Series Context provided: factor score (desperation vs. rest risk), game number, and per-player series avg vs season avg."
+        "- Series Context provided: factor score (desperation vs. rest risk), game number, and bullpen/rotation usage trends."
         if series_context_text
         else ""
     )
     arena_rules = (
-        "- Arena factors provided: apply altitude/travel effects to ceiling projections for visiting players."
+        "- Arena factors provided: apply park and environmental effects to prop direction and ceiling."
         if arena_context_text
         else ""
-    )
-    salary_column_note = "<!-- Salary = slate salary. -->\n" if salary_medians_text else ""
-    salary_rules = (
-        "- Salary context is provided. Use it to identify value plays (high projection relative to salary) "
-        "and salary traps (expensive players whose projection does not justify the price). "
-        "Reference specific salaries and the position medians when making value claims."
-        if salary_medians_text
-        else "- Salary data is not available for this slate. Do not reference salary, price, value, cost, or bargain."
     )
 
     user = resolve_sport_tokens(
@@ -120,12 +109,9 @@ def build_analysis_prompts(
         round_description=round_description,
         playoff_context=playoff_context,
         games_text=games_text,
-        salary_context_block=salary_context_block,
         arena_context_block=arena_context_block,
         series_context_block=series_context_block,
-        salary_column_note=salary_column_note,
         player_rows=player_rows,
-        salary_rules=salary_rules,
         arena_rules=arena_rules,
         series_rules=series_rules,
     )
