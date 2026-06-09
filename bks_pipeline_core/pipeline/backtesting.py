@@ -149,8 +149,16 @@ def compute_signal_accuracy(
     - hit_rate: when signal boosts (>1.0), fraction of players with above-average opp_ranking_score
     - fire_rate: fraction of players where signal deviates from 1.0
     """
+    from bks_pipeline_core.sport_config import get_active_config
+
+    try:
+        cfg_keys = get_active_config().signal_multiplier_keys
+    except RuntimeError:
+        cfg_keys = None
+    signal_list = cfg_keys if cfg_keys is not None else SIGNAL_MULTIPLIERS
+
     rows = [r for r in joined if r.get("opp_ranking_score") is not None]
-    all_signals = [s for s in SIGNAL_MULTIPLIERS if not (disabled_signals and s in disabled_signals)]
+    all_signals = [s for s in signal_list if not (disabled_signals and s in disabled_signals)]
 
     result: dict[str, dict[str, Any]] = {}
     scores = [float(r["opp_ranking_score"]) for r in rows]
@@ -505,9 +513,7 @@ def generate_insights(
                 {
                     "severity": "critical",
                     "signal": sig,
-                    "message": (
-                        f"{sig} is inversely correlated with outcomes (r={corr:.3f} over {days} days). Consider reducing weight or inverting."
-                    ),
+                    "message": (f"{sig} is inversely correlated with outcomes (r={corr:.3f} over {days} days). Consider reducing weight or inverting."),
                 }
             )
         elif corr < 0 and days >= 7:

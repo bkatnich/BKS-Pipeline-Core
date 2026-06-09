@@ -10,7 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-
 @dataclass(frozen=True)
 class BracketConfig:
     """Playoff bracket structure for a sport. Set on SportConfig.playoff_bracket."""
@@ -162,6 +161,17 @@ class SportConfig:
     # display_name: label shown in the accuracy report table (e.g. "Hits", "HR")
     # None = use the sport-agnostic default (basketball alias names).
     stat_fields: list[tuple[str, str, str]] | None = None
+
+    # Ordered list of signal multiplier keys to evaluate in compute_signal_accuracy().
+    # Controls which signals appear in the accuracy email Signal Scorecard.
+    # None = use the library default (full basketball signal list, SIGNAL_MULTIPLIERS).
+    signal_multiplier_keys: list[str] | None = None
+
+    # Display name overrides for signal multiplier keys in accuracy report emails.
+    # Merged over the library defaults — only keys that differ need to be specified.
+    # None = use library defaults (basketball-centric names).
+    # Example for MLB: {"matchup_multiplier": "Matchup (Pitching)", "shooting_luck_multiplier": "Hot/Cold Streak"}
+    signal_display_names: dict[str, str] | None = None
 
     # Sport-specific trend field names written per player, beyond the universal set.
     # These are merged into the full trend_fields frozenset by build_trend_fields().

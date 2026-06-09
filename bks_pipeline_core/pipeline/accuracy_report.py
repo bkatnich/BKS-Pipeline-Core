@@ -54,6 +54,15 @@ PLAYOFF_DISABLED_SIGNAL_FIELDS: set[str] = {
 }
 
 
+def _get_signal_display_names() -> dict[str, str]:
+    """Return signal display names merged with any sport-config overrides."""
+    try:
+        overrides = get_active_config().signal_display_names or {}
+    except RuntimeError:
+        overrides = {}
+    return {**_SIGNAL_DISPLAY_NAMES, **overrides}
+
+
 def _color_for_correlation(r: float | None) -> str:
     """Return a CSS color based on correlation strength."""
     if r is None:
@@ -134,8 +143,9 @@ def _summary_signal(signal_accuracy: dict[str, Any]) -> str:
     worst_sig = min(corrs, key=corrs.get)  # type: ignore[arg-type]
     best_r = corrs[best_sig]
     worst_r = corrs[worst_sig]
-    best_name = _SIGNAL_DISPLAY_NAMES.get(best_sig, best_sig)
-    worst_name = _SIGNAL_DISPLAY_NAMES.get(worst_sig, worst_sig)
+    _display = _get_signal_display_names()
+    best_name = _display.get(best_sig, best_sig)
+    worst_name = _display.get(worst_sig, worst_sig)
 
     parts = [f"{positive} of {total} active signals correlate positively with outcomes."]
     parts.append(f"Strongest: {best_name} (r={best_r:+.3f}).")
@@ -317,7 +327,7 @@ def generate_accuracy_report_html(
         if is_zero_fire and sig in _DISABLED_SIGNAL_FIELDS:
             continue
 
-        display_name = _SIGNAL_DISPLAY_NAMES.get(sig, sig)
+        display_name = _get_signal_display_names().get(sig, sig)
 
         if is_zero_fire and sig in _all_disabled:
             signal_rows_html += f"""
@@ -503,7 +513,8 @@ def generate_accuracy_report_html(
             key=lambda x: x[1].get("residual_correlation") or -999,
             reverse=True,
         ):
-            if sig not in _SIGNAL_DISPLAY_NAMES:
+            _display_names = _get_signal_display_names()
+            if sig not in _display_names:
                 continue
             corr_7d = data.get("residual_correlation")
             daily_corr = signal_accuracy.get(sig, {}).get("residual_correlation")
@@ -513,7 +524,7 @@ def generate_accuracy_report_html(
                 continue
             delta = (corr_7d - daily_corr) if daily_corr is not None else None
             delta_str = f"{delta:+.3f}" if delta is not None else "N/A"
-            display_name = _SIGNAL_DISPLAY_NAMES.get(sig, sig)
+            display_name = _display_names.get(sig, sig)
             trend_rows += f"""
             <tr>
                 <td style="padding:4px 8px;">{display_name}</td>
