@@ -628,7 +628,7 @@ def fetch_and_store_players(
             batch.commit()
         logger.info(
             "Phase 4b complete: wrote %d team_defense records (%.1fs)",
-            len(all_abbrs),
+            len(all_abbrs_list),
             _elapsed(),
         )
 
