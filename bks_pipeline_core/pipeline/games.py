@@ -154,19 +154,23 @@ def compute_team_rest_days(db: Any, today_str: str, playing_abbrs: list[str], ma
     """
     today = datetime.strptime(today_str, "%Y-%m-%d")
     playing_set = set(playing_abbrs)
-    rest_days: dict[str, int] = {}
 
-    for days_ago in range(1, max_lookback + 1):
-        check_date = (today - timedelta(days=days_ago)).strftime("%Y-%m-%d")
-        doc = db.collection("games").document(check_date).get()
-        if not doc.exists:
+    check_dates = [
+        (days_ago, (today - timedelta(days=days_ago)).strftime("%Y-%m-%d"))
+        for days_ago in range(1, max_lookback + 1)
+    ]
+    refs = [db.collection("games").document(date_str) for _, date_str in check_dates]
+    docs = {date_str: doc for (_, date_str), doc in zip(check_dates, db.get_all(refs))}
+
+    rest_days: dict[str, int] = {}
+    for days_ago, date_str in check_dates:
+        doc = docs.get(date_str)
+        if doc is None or not doc.exists:
             continue
         teams_that_day = set((doc.to_dict() or {}).get("playing_team_abbrs", []))
         for team in playing_set - rest_days.keys():
             if team in teams_that_day:
                 rest_days[team] = days_ago - 1  # 1 day ago = 0 rest days (B2B)
-
-        # Stop early if all teams found
         if len(rest_days) >= len(playing_set):
             break
 
