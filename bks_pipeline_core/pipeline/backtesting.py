@@ -99,13 +99,24 @@ def compute_match_coverage(
     predictions: dict[str, dict[str, Any]],
     actuals: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Compute a breakdown of why box-score players were not matched to predictions."""
+    """Compute a breakdown of why box-score players were not matched to predictions.
+
+    Predictions may use composite keys (e.g. "pid_gameid" for doubleheaders).
+    We derive the plain pid from pred["id"] — same logic as join_predictions_actuals —
+    so the coverage check stays consistent with the actual join result.
+    """
+    # Build plain-pid set from predictions (handles composite "pid_gameid" keys).
+    pred_pids: set[str] = set()
+    for key, pred in predictions.items():
+        pid = str(pred.get("id", "")) or key
+        pred_pids.add(pid)
+
     matched: list[str] = []
     dnp: list[str] = []
     not_snapshotted: list[str] = []
 
     for pid, act in actuals.items():
-        if pid not in predictions:
+        if pid not in pred_pids:
             not_snapshotted.append(pid)
             continue
         if act.get("dnp", False):
