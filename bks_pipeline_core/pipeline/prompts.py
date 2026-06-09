@@ -173,10 +173,12 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
     spread_str = f"{home} {spread:+.1f}" if spread is not None else "N/A"
 
     lines_block = f"Lines: O/U {ou_str} | {home} ITT {home_itt_str} | {away} ITT {away_itt_str} | Spread {spread_str}"
-    if ou_open is not None or home_itt_open is not None:
-        ou_open_str = f"{ou_open}" if ou_open is not None else "N/A"
-        home_open_str = f"{home_itt_open}" if home_itt_open is not None else "N/A"
-        lines_block += f"\nOpening: O/U {ou_open_str} | {home} ITT {home_open_str}"
+    if ou_open is not None and home_itt_open is not None:
+        ou_delta = round(float(ou) - float(ou_open), 1) if ou is not None else None
+        itt_delta = round(float(home_itt) - float(home_itt_open), 1) if home_itt is not None else None
+        ou_delta_str = f" ({ou_delta:+.1f})" if ou_delta is not None else ""
+        itt_delta_str = f" ({itt_delta:+.1f})" if itt_delta is not None else ""
+        lines_block += f"\nOpening: O/U {ou_open}{ou_delta_str} | {home} ITT {home_itt_open}{itt_delta_str}"
 
     bp_parts = []
     if home_bp is not None:
@@ -189,7 +191,7 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
         if not d:
             return f"{label} defense: N/A"
         parts = [f"{pos}:{v:.1f}" for pos, v in sorted(d.items()) if v is not None]
-        return f"{label} defense (avg pts allowed by pos): " + ", ".join(parts)
+        return f"{label} defense (avg PA allowed per game by pos): " + ", ".join(parts)
 
     defense_block = _fmt_defense(home_def, home) + "\n" + _fmt_defense(away_def, away)
 
