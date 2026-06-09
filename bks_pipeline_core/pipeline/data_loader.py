@@ -126,7 +126,7 @@ def load_prediction_context(
         # Reads active series docs; elimination_game_next is written by record_game_result.
         from bks_pipeline_core.pipeline.playoffs import get_all_series
 
-        _season = get_league_state(db).get("season", 2025)
+        _season = league_state.get("season", 2025)
         _all_series = get_all_series(db, _season)
         elimination_teams: set[str] = set()
         for s in _all_series:
