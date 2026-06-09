@@ -49,20 +49,18 @@ def build_analysis_prompts(
     lang_instruction: str = "",
     arena_context_text: str = "",
     series_context_text: str = "",
-    prop_pick_count: int = 5,
 ) -> tuple[str, str]:
-    """Return (system, user) prompts for slate props analysis.
+    """Return (system, user) prompts for slate synthesis analysis (Stage 2).
 
     Args:
         today_et: Date string in ET, e.g. "2026-05-09".
         game_count: Number of games on the slate.
         games_text: Pre-formatted game lines block (Away @ Home | Spread | Total).
-        player_rows: Pre-formatted prop rows block (pre-screened, sharp-first).
+        player_rows: Pre-formatted opportunity-score rows (top-N players by opp_ranking_score).
         round_description: "slate", "regular season", or "playoff (Round X)".
         lang_instruction: Optional i18n suffix appended to the system prompt.
         arena_context_text: Optional pre-formatted arena factors block.
         series_context_text: Optional pre-formatted playoff series context block.
-        prop_pick_count: Number of prop picks to select (default 5).
     """
     cfg = load_prompt("analysis")
     sport = get_active_config()
@@ -76,7 +74,6 @@ def build_analysis_prompts(
         sport_display_name=sport.sport_display_name,
         lang_instruction=lang_instruction,
         schema=schema,
-        prop_pick_count=prop_pick_count,
     )
 
     playoff_context = (
