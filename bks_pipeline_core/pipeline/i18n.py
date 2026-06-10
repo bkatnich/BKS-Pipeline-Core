@@ -7,6 +7,7 @@ Firestore at translations/{lang}/{sha256(text)} with a 30-day TTL.
 
 import hashlib
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -63,17 +64,33 @@ def translate(
     db and api_key are required for non-English languages.
     context is a short hint for the translator, e.g. "NBA push notification body".
     """
+    result, _ = _translate_with_usage(text, target_lang, context=context, db=db, api_key=api_key)
+    return result
+
+
+def _translate_with_usage(
+    text: str,
+    target_lang: str,
+    context: str = "",
+    db: Any = None,
+    api_key: str = "",
+) -> tuple[str, dict[str, int]]:
+    """Like translate(), but also returns the Anthropic token_usage dict.
+
+    Returns ({original_text}, {}) on cache hit, English passthrough, or empty input.
+    Used by preWarmTranslations to aggregate per-language token totals.
+    """
     if not text or not text.strip():
-        return text
+        return text, {}
 
     # Any English variant (en, en-US, en-GB) passes through unchanged.
     if target_lang.lower().startswith("en"):
-        return text
+        return text, {}
 
     cache_key = hashlib.sha256(text.encode()).hexdigest()
     lang_lower = target_lang.lower()
 
-    # Firestore cache check
+    # Firestore cache check — cache hit costs zero tokens
     if db is not None:
         try:
             cache_ref = db.collection("translations").document(lang_lower).collection("cache").document(cache_key)
@@ -82,12 +99,12 @@ def translate(
                 data = cached.to_dict() or {}
                 translation = data.get("translation")
                 if translation:
-                    return translation
+                    return translation, {}
         except Exception:
             logger.warning("i18n: cache read failed for lang=%s key=%s", lang_lower, cache_key, exc_info=True)
 
     # Call Claude haiku for translation
-    translation = _translate_via_claude(text, target_lang, context, api_key)
+    translation, usage = _translate_via_claude(text, target_lang, context, api_key)
 
     # Write to cache
     if db is not None and translation and translation != text:
@@ -106,7 +123,7 @@ def translate(
         except Exception:
             logger.warning("i18n: cache write failed for lang=%s key=%s", lang_lower, cache_key, exc_info=True)
 
-    return translation
+    return translation, usage
 
 
 def translate_dict(
@@ -123,15 +140,18 @@ def translate_dict(
     return {k: translate(v, target_lang, context=context, db=db, api_key=api_key) for k, v in strings.items()}
 
 
-def _translate_via_claude(text: str, target_lang: str, context: str, api_key: str) -> str:
-    """Call Claude haiku to translate text. Returns original text on any failure."""
+def _translate_via_claude(text: str, target_lang: str, context: str, api_key: str) -> tuple[str, dict[str, int]]:
+    """Call Claude haiku to translate text. Returns (translated_text, token_usage).
+
+    Returns (original_text, {}) on any failure or missing api_key.
+    """
     if not api_key:
         logger.warning("i18n: no API key provided, returning original text")
-        return text
+        return text, {}
 
     try:
         system = build_translation_prompt(lang_name(target_lang), context)
-        translated, _usage = call_claude(
+        translated, usage = call_claude(
             api_key=api_key,
             model=TRANSLATION_MODEL,
             max_tokens=TRANSLATION_MAX_TOKENS,
@@ -139,8 +159,8 @@ def _translate_via_claude(text: str, target_lang: str, context: str, api_key: st
             user=text,
             timeout=15.0,
         )
-        return translated.strip()
+        return translated.strip(), usage
 
     except Exception:
         logger.warning("i18n: translation failed for lang=%s, returning original", target_lang, exc_info=True)
-        return text
+        return text, {}
