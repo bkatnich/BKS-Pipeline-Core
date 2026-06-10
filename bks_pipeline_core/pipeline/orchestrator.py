@@ -879,7 +879,13 @@ def fetch_and_store_lineup_event_ids(
     if not events:
         return 0
 
-    event_map: dict[tuple[str, str], str] = {(e["home_team_abbr"], e["visitor_team_abbr"]): e["event_id"] for e in events}
+    # Key includes game_sequence so doubleheader games (same teams, different gamePk)
+    # don't overwrite each other. Providers that don't track game_sequence emit 1,
+    # which matches the game_sequence=1 default on single-game matchup docs.
+    event_map: dict[tuple[str, str, int], str] = {
+        (e["home_team_abbr"], e["visitor_team_abbr"], int(e.get("game_sequence") or 1)): e["event_id"]
+        for e in events
+    }
 
     matchups_ref = db.collection("games").document(date_str).collection("matchups")
     matchup_docs = list(matchups_ref.stream())
@@ -892,7 +898,8 @@ def fetch_and_store_lineup_event_ids(
         d = doc.to_dict() or {}
         home = d.get("home_team_abbr", "")
         visitor = d.get("visitor_team_abbr", "")
-        eid = event_map.get((home, visitor))
+        seq = int(d.get("game_sequence") or 1)
+        eid = event_map.get((home, visitor, seq))
         if eid:
             batch.set(matchups_ref.document(doc.id), {"lineup_event_id": eid}, merge=True)
             count += 1
