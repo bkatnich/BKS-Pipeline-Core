@@ -34,6 +34,9 @@ PROP_LLM_TAKE_MAX_TOKENS: int = int(_meta("prop_llm_take", "max_tokens"))
 PROP_SLATE_SYNTHESIS_MODEL: str = str(_meta("prop_slate_synthesis", "model"))
 PROP_SLATE_SYNTHESIS_MAX_TOKENS: int = int(_meta("prop_slate_synthesis", "max_tokens"))
 
+PROP_COMBINED_MODEL: str = str(_meta("prop_combined", "model"))
+PROP_COMBINED_MAX_TOKENS: int = int(_meta("prop_combined", "max_tokens"))
+
 TRANSLATION_MODEL: str = str(_meta("translation", "model"))
 TRANSLATION_MAX_TOKENS: int = int(_meta("translation", "max_tokens"))
 
@@ -565,6 +568,98 @@ Props ({len(props)} total, sorted by conviction tier then edge):
 {props_block}
 
 Output schema (return only this JSON object, no prose):
+{schema}"""
+
+    return system, user
+
+
+# ---------------------------------------------------------------------------
+# Combined prop evaluation + nomination + synthesis (single Sonnet call)
+# ---------------------------------------------------------------------------
+
+
+def build_prop_combined_prompt(
+    props: "list[dict[str, object]]",
+    near_misses: "list[dict[str, object]] | None" = None,
+) -> "tuple[str, str]":
+    """Return (system, user) prompts for the combined Sonnet prop call.
+
+    Replaces the sequential Haiku (prop_llm_take) + Sonnet (prop_slate_synthesis)
+    calls with a single Sonnet call that evaluates props, nominates near-misses,
+    and synthesizes the slate in one pass.
+
+    Args:
+        props: The final top_prop_opportunities list with full context fields.
+               Each entry must have player_id, player_name, team, market, and a
+               blackkatt_instinct dict with direction, predicted_value, probability,
+               market_probability, edge_pp.
+        near_misses: Optional near-miss candidates for the nomination task. When
+                     None or empty, the nominations key is omitted from the schema
+                     and the model skips the nomination task.
+    """
+    cfg = load_prompt("prop_combined")
+    ctx = get_active_config().prompt_context
+    system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
+    schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
+
+    props_block = "\n".join(_build_prop_row(p) for p in props) if props else "(no props)"
+
+    # Build deduplicated game lines block (same logic as build_prop_slate_synthesis_prompt).
+    seen_games: "set[tuple[str, str]]" = set()
+    game_lines: "list[str]" = []
+    for p in props:
+        team = str(p.get("team") or "")
+        opp = str(p.get("opponent_abbr") or "")
+        is_home = p.get("is_home")
+        if not team or not opp:
+            continue
+        home = team if is_home else opp
+        away = opp if is_home else team
+        game_key = (min(home, away), max(home, away))
+        if game_key in seen_games:
+            continue
+        seen_games.add(game_key)
+        ou = p.get("vegas_over_under")
+        home_itt = p.get("vegas_implied_team_total") if is_home else None
+        spread = p.get("vegas_spread")
+        park = p.get("park_factor_tier") or "neutral"
+        elev = p.get("elevation_tier") or "normal"
+        parts = [f"{away} @ {home}"]
+        if ou is not None:
+            parts.append(f"O/U {ou}")
+        if home_itt is not None:
+            parts.append(f"{home} ITT {home_itt}")
+        if spread is not None:
+            parts.append(f"spread {spread:+.1f}")
+        if park != "neutral":
+            parts.append(f"park={park}")
+        if elev == "high":
+            parts.append("elev=high")
+        game_lines.append(" | ".join(parts))
+
+    games_block = "\n".join(game_lines) if game_lines else "N/A"
+
+    if near_misses:
+        nm_block = "\n".join(_build_prop_row(nm) for nm in near_misses)
+        user = f"""Game lines:
+{games_block}
+
+Props to evaluate ({len(props)} total):
+{props_block}
+
+Near-miss props for nomination consideration ({len(near_misses)} total):
+{nm_block}
+
+Output schema (return only this JSON object, no prose):
+{schema}"""
+    else:
+        user = f"""Game lines:
+{games_block}
+
+Props to evaluate ({len(props)} total):
+{props_block}
+
+Output schema (return only this JSON object, no prose — omit the nominations key):
 {schema}"""
 
     return system, user
