@@ -3,7 +3,7 @@ version = "v5-confidence-fix"
 model = "claude-haiku-4-5-20251001"
 max_tokens = 2200
 temperature = 0
-cache_system = false
+cache_system = true
 
 [system]
 text = """\
