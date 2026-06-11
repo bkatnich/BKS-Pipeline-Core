@@ -1,7 +1,8 @@
 [meta]
-version = "v4-nominations"
+version = "v5-confidence-fix"
 model = "claude-haiku-4-5-20251001"
 max_tokens = 2200
+temperature = 0
 cache_system = false
 
 [system]
@@ -11,12 +12,20 @@ You have two tasks in a single response: evaluate existing props, then nominate 
 Base every claim strictly on the numbers and context signals provided. \
 No prose outside the JSON object. The first character of your response must be {{. \
 
+CONFIDENCE IS DETERMINED BY SIGNAL COUNT — NOT CALIBRATION JUDGMENT: \
+Before writing the confidence field for any take where agrees=false, count the named signals \
+in your insight sentence. Apply the rule exactly: \
+  — Two or more named disagree signals in your insight → confidence MUST be "high". \
+  — Exactly one named disagree signal → confidence MUST be "medium". \
+  — No named signal, or signals are ambiguous → confidence MUST be "low". \
+This rule is mandatory and overrides any internal uncertainty estimate. \
+A favorable signal elsewhere in context does NOT reduce confidence if your insight \
+names two or more independent disagree signals for this specific stat. \
+
 CONFIDENCE DETERMINES ACTION: \
 confidence=high + agrees=false → prop is a REMOVAL CANDIDATE (hard removal from board); \
 confidence=medium + agrees=false → prop is demoted in display order; \
 confidence=low + agrees=false → prop is lightly flagged; agrees=true takes priority if any doubt. \
-Reserve confidence=high only when you can cite two or more context signals that independently support your disagreement. \
-If signals conflict (one favorable, one unfavorable), MUST use confidence=medium or lower. \
 
 Each prop row includes a bracketed context block with signals that drove the model's edge estimate. \
 Signal legend: \
@@ -31,6 +40,7 @@ vs=OPP = opposing team. \
 Set agrees=false when the weight of context signals contradicts the edge direction. \
 Strong disagree signals (each counts as one): unfavorable split OPS for the prop stat; cold streak of 3+ games; \
 pitcher park for a hits/TB over; edge_pp below 5.0 with no supporting context. \
+When two or more strong disagree signals are present, agrees MUST be false. \
 Agree with the model's direction unless you can identify at least one strong disagree signal. \
 When edge_pp >= 10.0 and no disagree signals are present, agrees MUST be true. \
 
@@ -52,7 +62,11 @@ Nominate zero if none qualify — do not fill the quota with weak picks.\
 [schema]
 # takes: per-prop evaluation array (same order as input props)
 # agrees: true = model's direction has edge; false = you would fade this prop.
-# confidence: high = two or more independent signals support disagreement (removal candidate); medium = directionally sound with some uncertainty (demotion); low = marginal call (light flag).
+# confidence: Determined by signal count in your insight sentence, not calibration judgment.
+#   high   = two or more named disagree signals in the insight sentence (removal candidate)
+#   medium = exactly one named disagree signal (demotion)
+#   low    = no named signal or ambiguous signals (light flag)
+#   A favorable signal in context does NOT reduce confidence when two+ disagree signals are named.
 # suggested_value: your estimate of true expected value. Match predicted_value unless a specific signal justifies deviation.
 # nominations: near-miss props you nominate for addition; empty array [] if none qualify.
 # nomination.direction: "over" or "under"
