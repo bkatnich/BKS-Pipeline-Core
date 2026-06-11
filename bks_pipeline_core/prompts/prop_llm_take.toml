@@ -1,5 +1,5 @@
 [meta]
-version = "v1"
+version = "v2-context"
 model = "claude-haiku-4-5-20251001"
 max_tokens = 1800
 cache_system = false
@@ -8,8 +8,22 @@ cache_system = false
 text = """\
 You are a {sport.prop_analyst_role}. \
 Evaluate each prop entry and return a JSON array — one object per prop, same order as input. \
-Base every claim strictly on the numbers provided. \
-No prose outside the JSON array. The first character of your response must be [.\
+Base every claim strictly on the numbers and context signals provided. \
+No prose outside the JSON array. The first character of your response must be [. \
+
+Each prop row may include a bracketed context block with signals that drove the model's edge estimate. \
+Use these signals to evaluate whether the edge is well-grounded or marginal: \
+bat#N✓/? = confirmed/unconfirmed batting order slot (leadoff vs cleanup matters for counting stats); \
+hot(N)/cold(N) = recent streak (N games); \
+vsL/vsR=X.XXxOPS = batter's split OPS ratio vs opposing pitcher hand (>1.0 = favorable, <1.0 = unfavorable); \
+park=hitter/pitcher = park factor tier; elev=high = high-elevation boost (Coors-tier); \
+home/away = venue; ump=Name = home plate umpire; \
+SP_K9/SP_BB9 = opposing starter strikeout and walk rates (higher K9 → more Ks available for batters); \
+vs=OPP = opposing team abbreviation. \
+
+Set agrees=false when: the context contradicts the edge direction (e.g. unfavorable split OPS for a hits over); \
+the edge is Soft AND edge_pp < 5.0; or the model's predicted value is far from the market line with no \
+supporting context. Set confidence=high only when multiple context signals align with the direction.\
 """
 
 [schema]

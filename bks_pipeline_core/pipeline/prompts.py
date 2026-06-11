@@ -367,6 +367,54 @@ def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, 
             if bk_parts:
                 parts.append(" | ".join(bk_parts))
 
+        # Scoring-engine context signals — present when _merge_scoring_context ran.
+        # Build a compact context block so Haiku can evaluate the reasoning chain,
+        # not just the output edge number.
+        ctx_parts: "list[str]" = []
+        bat_order = p.get("batting_order")
+        confirmed = p.get("is_confirmed_starter")
+        if bat_order is not None:
+            slot_flag = "✓" if confirmed else "?"
+            ctx_parts.append(f"bat#{bat_order}{slot_flag}")
+        hot = p.get("hot_streak")
+        cold = p.get("cold_streak")
+        if hot:
+            ctx_parts.append(f"hot({hot})")
+        elif cold:
+            ctx_parts.append(f"cold({cold})")
+        opp_hand = p.get("opp_pitcher_hand")
+        season_ops = p.get("season_ops")
+        vs_left = p.get("vs_left_ops")
+        vs_right = p.get("vs_right_ops")
+        if opp_hand in ("L", "R") and season_ops:
+            split_ops = vs_left if opp_hand == "L" else vs_right
+            if split_ops:
+                ratio = round(float(split_ops) / float(season_ops), 2)  # type: ignore[arg-type]
+                ctx_parts.append(f"vs{opp_hand}={ratio:.2f}xOPS")
+        park = p.get("park_factor_tier")
+        elev = p.get("elevation_tier")
+        is_home = p.get("is_home")
+        if park and park != "neutral":
+            ctx_parts.append(f"park={park}")
+        if elev and elev == "high":
+            ctx_parts.append("elev=high")
+        if is_home is not None:
+            ctx_parts.append("home" if is_home else "away")
+        ump = p.get("umpire_name")
+        if ump:
+            ctx_parts.append(f"ump={ump}")
+        k9 = p.get("opp_sp_k9")
+        bb9 = p.get("opp_sp_bb9")
+        if k9 is not None:
+            ctx_parts.append(f"SP_K9={k9:.1f}")
+        if bb9 is not None:
+            ctx_parts.append(f"SP_BB9={bb9:.1f}")
+        opp = p.get("opponent_abbr")
+        if opp:
+            ctx_parts.append(f"vs={opp}")
+        if ctx_parts:
+            parts.append("[" + " ".join(ctx_parts) + "]")
+
         rows.append(" | ".join(parts))
 
     props_block = "\n".join(rows) if rows else "(no props)"
