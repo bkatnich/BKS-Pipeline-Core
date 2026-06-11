@@ -1,5 +1,5 @@
 [meta]
-version = "v2-context"
+version = "v3-removal-aware"
 model = "claude-haiku-4-5-20251001"
 max_tokens = 1800
 cache_system = false
@@ -11,25 +11,38 @@ Evaluate each prop entry and return a JSON array — one object per prop, same o
 Base every claim strictly on the numbers and context signals provided. \
 No prose outside the JSON array. The first character of your response must be [. \
 
-Each prop row may include a bracketed context block with signals that drove the model's edge estimate. \
-Use these signals to evaluate whether the edge is well-grounded or marginal: \
-bat#N✓/? = confirmed/unconfirmed batting order slot (leadoff vs cleanup matters for counting stats); \
+CONFIDENCE DETERMINES ACTION: \
+confidence=high + agrees=false → prop is a REMOVAL CANDIDATE (hard removal from board); \
+confidence=medium + agrees=false → prop is demoted in display order; \
+confidence=low + agrees=false → prop is lightly flagged; agrees=true takes priority if any doubt. \
+Reserve confidence=high only when you can cite two or more context signals that independently support your disagreement. \
+If signals conflict (one favorable, one unfavorable), MUST use confidence=medium or lower. \
+
+Each prop row includes a bracketed context block with signals that drove the model's edge estimate. \
+Signal legend: \
+bat#N✓/? = confirmed/unconfirmed batting order slot (leadoff vs bottom-order matters for counting stats); \
 hot(N)/cold(N) = recent streak (N games); \
 vsL/vsR=X.XXxOPS = batter's split OPS ratio vs opposing pitcher hand (>1.0 = favorable, <1.0 = unfavorable); \
 park=hitter/pitcher = park factor tier; elev=high = high-elevation boost (Coors-tier); \
 home/away = venue; ump=Name = home plate umpire; \
-SP_K9/SP_BB9 = opposing starter strikeout and walk rates (higher K9 → more Ks available for batters); \
-vs=OPP = opposing team abbreviation. \
+SP_K9/SP_BB9 = opposing starter K and walk rates (higher K9 → more Ks available for batters); \
+vs=OPP = opposing team. \
 
-Set agrees=false when: the context contradicts the edge direction (e.g. unfavorable split OPS for a hits over); \
-the edge is Soft AND edge_pp < 5.0; or the model's predicted value is far from the market line with no \
-supporting context. Set confidence=high only when multiple context signals align with the direction.\
+Set agrees=false when the weight of context signals contradicts the edge direction. \
+Strong disagree signals (each counts as one): unfavorable split OPS for the prop stat; cold streak of 3+ games; \
+pitcher park for a hits/TB over; edge_pp below 5.0 with no supporting context. \
+Agree with the model's direction unless you can identify at least one strong disagree signal. \
+When edge_pp >= 10.0 and no disagree signals are present, agrees MUST be true. \
+
+Set suggested_value to your estimate of where the stat will land today — \
+deviate from predicted_value only when a specific context signal (split OPS, streak, park, umpire) \
+justifies the deviation; otherwise match predicted_value exactly.\
 """
 
 [schema]
-# agrees: true if you agree the model's direction has edge; false if you would fade it.
-# confidence: high = strong evidence, clear edge; medium = directionally sound but some uncertainty; low = marginal edge, close call.
-# suggested_value: your best estimate of the true expected value for this stat today (float, same units as line). May match or differ from predicted_value.
+# agrees: true = model's direction has edge; false = you would fade this prop.
+# confidence: high = two or more independent signals support disagreement (removal candidate); medium = directionally sound with some uncertainty (demotion); low = marginal call (light flag).
+# suggested_value: your estimate of true expected value. Match predicted_value unless a specific signal justifies deviation.
 text = """\
 [
   {{
@@ -38,7 +51,7 @@ text = """\
     "agrees": true,
     "confidence": "high | medium | low",
     "suggested_value": 1.5,
-    "insight": "1 sentence: the sharpest reason to take or fade this prop given the numbers."
+    "insight": "1 sentence: the sharpest reason to take or fade this prop. Cite the specific signal."
   }}
 ]\
 """
