@@ -1,0 +1,32 @@
+[meta]
+version = "v1"
+model = "claude-sonnet-4-6"
+max_tokens = 600
+cache_system = true
+
+[system]
+text = """\
+You are a {sport.prop_analyst_role} producing a cross-prop slate synthesis for a sharp betting audience. \
+You have already seen the per-prop edge analysis. Your job is cross-prop synthesis only: \
+rank picks by conviction, write a concise narrative for the top plays, and flag structural contradictions. \
+Base every claim strictly on the props and game lines provided. \
+No prose outside the JSON object. The first character of your response must be {{.\
+"""
+
+[schema]
+text = """\
+{{
+  "ranked_picks": [
+    {{
+      "player_id": "string — copy exactly from input",
+      "market": "string — copy exactly from input",
+      "conviction": "high | medium | low",
+      "conviction_reason": "1 sentence: the single strongest signal supporting this pick."
+    }}
+  ],
+  "daily_prop_narrative": "2-3 sentences covering the 2-3 highest-conviction plays and why they cohere as a slate strategy.",
+  "contradictions": [
+    "1 string per structural tension — e.g. hits over AND team total under in same game, or two teammates both over when one bats 8th"
+  ]
+}}\
+"""

@@ -31,6 +31,9 @@ GAME_INSIGHT_MAX_TOKENS: int = int(_meta("game_insight", "max_tokens"))
 PROP_LLM_TAKE_MODEL: str = str(_meta("prop_llm_take", "model"))
 PROP_LLM_TAKE_MAX_TOKENS: int = int(_meta("prop_llm_take", "max_tokens"))
 
+PROP_SLATE_SYNTHESIS_MODEL: str = str(_meta("prop_slate_synthesis", "model"))
+PROP_SLATE_SYNTHESIS_MAX_TOKENS: int = int(_meta("prop_slate_synthesis", "max_tokens"))
+
 TRANSLATION_MODEL: str = str(_meta("translation", "model"))
 TRANSLATION_MAX_TOKENS: int = int(_meta("translation", "max_tokens"))
 
@@ -423,6 +426,119 @@ def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, 
 {props_block}
 
 Output schema (return only this JSON array, one object per prop, same order):
+{schema}"""
+
+    return system, user
+
+
+# ---------------------------------------------------------------------------
+# Cross-prop slate synthesis (Sonnet, post-Haiku)
+# ---------------------------------------------------------------------------
+
+
+def build_prop_slate_synthesis_prompt(props: "list[dict[str, object]]") -> "tuple[str, str]":
+    """Return (system, user) prompts for the Sonnet cross-prop slate synthesis call.
+
+    Fires once per snapshot_prop_predictions run, after Haiku enrichment and
+    _stamp_llm_fade. Gives Sonnet the full final prop list plus per-game context
+    (O/U, ITT, spread, park, venue) so it can rank by conviction, write a
+    slate narrative, and flag structural contradictions across props.
+
+    Args:
+        props: The finalized top_prop_opportunities list (post _stamp_llm_fade).
+               Each entry is expected to have player_id, player_name, team,
+               market, stat, blackkatt_instinct (with direction, predicted_value,
+               probability, market_probability, edge_pp, agrees, confidence),
+               llm_fade, is_sharp, and optional context fields
+               (vegas_implied_team_total, vegas_over_under, vegas_spread,
+               park_factor_tier, elevation_tier, is_home, opponent_abbr,
+               umpire_name, batting_order, hot_streak, cold_streak).
+    """
+    cfg = load_prompt("prop_slate_synthesis")
+    ctx = get_active_config().prompt_context
+    system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
+    schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
+
+    # Build deduplicated game lines block from props context fields.
+    # Key: (team, opponent, is_home) — one row per unique game side.
+    seen_games: "set[tuple[str, str]]" = set()
+    game_lines: "list[str]" = []
+    for p in props:
+        team = str(p.get("team") or "")
+        opp = str(p.get("opponent_abbr") or "")
+        is_home = p.get("is_home")
+        if not team or not opp:
+            continue
+        home = team if is_home else opp
+        away = opp if is_home else team
+        game_key = (min(home, away), max(home, away))
+        if game_key in seen_games:
+            continue
+        seen_games.add(game_key)
+        ou = p.get("vegas_over_under")
+        home_itt = p.get("vegas_implied_team_total") if is_home else None
+        spread = p.get("vegas_spread")
+        park = p.get("park_factor_tier") or "neutral"
+        elev = p.get("elevation_tier") or "normal"
+        parts = [f"{away} @ {home}"]
+        if ou is not None:
+            parts.append(f"O/U {ou}")
+        if home_itt is not None:
+            parts.append(f"{home} ITT {home_itt}")
+        if spread is not None:
+            parts.append(f"spread {spread:+.1f}")
+        if park != "neutral":
+            parts.append(f"park={park}")
+        if elev == "high":
+            parts.append("elev=high")
+        game_lines.append(" | ".join(parts))
+
+    games_block = "\n".join(game_lines) if game_lines else "N/A"
+
+    rows: "list[str]" = []
+    for p in props:
+        player_id = str(p.get("player_id") or "")
+        player_name = str(p.get("player_name") or "")
+        team = str(p.get("team") or "")
+        market = str(p.get("market") or "")
+        instinct: "dict[str, object]" = dict(p.get("blackkatt_instinct") or {})  # type: ignore[arg-type]
+        direction = str(instinct.get("direction") or "over")
+        edge_pp = instinct.get("edge_pp")
+        haiku_confidence = instinct.get("confidence") or "?"
+        agrees = instinct.get("agrees")
+        fade_flag = " [FADE]" if p.get("llm_fade") else ""
+        sharp_flag = "Sharp" if p.get("is_sharp") else "Soft"
+        edge_str = f"+{edge_pp}pp" if edge_pp is not None else "N/A"
+
+        ctx_parts: "list[str]" = []
+        bat = p.get("batting_order")
+        if bat is not None:
+            ctx_parts.append(f"bat#{bat}")
+        hot = p.get("hot_streak")
+        cold = p.get("cold_streak")
+        if hot:
+            ctx_parts.append(f"hot({hot})")
+        elif cold:
+            ctx_parts.append(f"cold({cold})")
+        ump = p.get("umpire_name")
+        if ump:
+            ctx_parts.append(f"ump={ump}")
+        ctx_str = " ".join(ctx_parts)
+
+        row = f"player_id={player_id} | {player_name} ({team}) | {market} {direction} | edge={edge_str} | {sharp_flag} | haiku={haiku_confidence}{fade_flag}"
+        if ctx_str:
+            row += f" | [{ctx_str}]"
+        rows.append(row)
+
+    props_block = "\n".join(rows) if rows else "(no props)"
+
+    user = f"""Game lines:
+{games_block}
+
+Props ({len(props)} total, sorted by conviction tier then edge):
+{props_block}
+
+Output schema (return only this JSON object, no prose):
 {schema}"""
 
     return system, user
