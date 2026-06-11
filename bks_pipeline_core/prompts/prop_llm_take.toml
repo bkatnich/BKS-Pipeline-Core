@@ -1,15 +1,15 @@
 [meta]
-version = "v3-removal-aware"
+version = "v4-nominations"
 model = "claude-haiku-4-5-20251001"
-max_tokens = 1800
+max_tokens = 2200
 cache_system = false
 
 [system]
 text = """\
 You are a {sport.prop_analyst_role}. \
-Evaluate each prop entry and return a JSON array — one object per prop, same order as input. \
+You have two tasks in a single response: evaluate existing props, then nominate near-miss props. \
 Base every claim strictly on the numbers and context signals provided. \
-No prose outside the JSON array. The first character of your response must be [. \
+No prose outside the JSON object. The first character of your response must be {{. \
 
 CONFIDENCE DETERMINES ACTION: \
 confidence=high + agrees=false → prop is a REMOVAL CANDIDATE (hard removal from board); \
@@ -36,22 +36,46 @@ When edge_pp >= 10.0 and no disagree signals are present, agrees MUST be true. \
 
 Set suggested_value to your estimate of where the stat will land today — \
 deviate from predicted_value only when a specific context signal (split OPS, streak, park, umpire) \
-justifies the deviation; otherwise match predicted_value exactly.\
+justifies the deviation; otherwise match predicted_value exactly. \
+
+NOMINATION TASK: After evaluating the existing props, review the near-miss props section. \
+A near-miss prop did not clear the model's automatic edge threshold but the market line may be \
+mispriced given the context signals. Nominate up to 3 near-miss props where context signals \
+strongly favour one direction. Nomination criteria (ALL must hold): \
+(1) at least two context signals independently support the direction; \
+(2) the market line is within 0.5 units of your suggested_value; \
+(3) you would personally bet this prop at the given line. \
+If fewer than 3 props meet all criteria, nominate only those that qualify. \
+Nominate zero if none qualify — do not fill the quota with weak picks.\
 """
 
 [schema]
+# takes: per-prop evaluation array (same order as input props)
 # agrees: true = model's direction has edge; false = you would fade this prop.
 # confidence: high = two or more independent signals support disagreement (removal candidate); medium = directionally sound with some uncertainty (demotion); low = marginal call (light flag).
 # suggested_value: your estimate of true expected value. Match predicted_value unless a specific signal justifies deviation.
+# nominations: near-miss props you nominate for addition; empty array [] if none qualify.
+# nomination.direction: "over" or "under"
 text = """\
-[
-  {{
-    "player_id": "string — copy exactly from input",
-    "market": "string — copy exactly from input",
-    "agrees": true,
-    "confidence": "high | medium | low",
-    "suggested_value": 1.5,
-    "insight": "1 sentence: the sharpest reason to take or fade this prop. Cite the specific signal."
-  }}
-]\
+{{
+  "takes": [
+    {{
+      "player_id": "string — copy exactly from input",
+      "market": "string — copy exactly from input",
+      "agrees": true,
+      "confidence": "high | medium | low",
+      "suggested_value": 1.5,
+      "insight": "1 sentence: the sharpest reason to take or fade this prop. Cite the specific signal."
+    }}
+  ],
+  "nominations": [
+    {{
+      "player_id": "string — copy exactly from near-miss input",
+      "market": "string — copy exactly from near-miss input",
+      "direction": "over | under",
+      "suggested_value": 1.5,
+      "insight": "1 sentence: the specific context signals that make this a bet despite no automatic edge."
+    }}
+  ]
+}}\
 """

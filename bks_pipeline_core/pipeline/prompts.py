@@ -313,120 +313,146 @@ Output schema (return only this JSON object, no prose):
 # ---------------------------------------------------------------------------
 
 
-def build_prop_llm_take_prompt(props: "list[dict[str, object]]") -> "tuple[str, str]":
+def _build_prop_row(p: "dict[str, object]") -> str:
+    """Render a single prop dict as a compact text row for LLM prompts."""
+    player_id = str(p.get("player_id") or "")
+    player_name = str(p.get("player_name") or "")
+    team = str(p.get("team") or "")
+    market = str(p.get("market") or "")
+    instinct: "dict[str, object]" = dict(p.get("blackkatt_instinct") or {})  # type: ignore[arg-type]
+    direction = str(instinct.get("direction") or p.get("direction") or "over")
+    predicted = instinct.get("predicted_value") or p.get("predicted_value")
+    our_prob = instinct.get("probability")
+    mkt_prob = instinct.get("market_probability")
+    edge_pp = instinct.get("edge_pp") or p.get("edge_pp")
+
+    predicted_str = f"{predicted}" if predicted is not None else "N/A"
+    our_prob_str = f"{round(float(our_prob) * 100)}%" if our_prob is not None else "N/A"
+    mkt_prob_str = f"{round(float(mkt_prob) * 100)}%" if mkt_prob is not None else "N/A"
+    edge_str = f"+{edge_pp}pp" if edge_pp is not None else "N/A"
+
+    sharp_flag = "Sharp" if p.get("is_sharp") else "Soft"
+    parts = [
+        f"player_id={player_id}",
+        f"{player_name} ({team})" if team else player_name,
+        f"market={market}",
+        direction,
+        f"predicted={predicted_str}",
+        f"our_prob={our_prob_str}",
+        f"mkt_prob={mkt_prob_str}",
+        f"edge={edge_str}",
+        sharp_flag,
+    ]
+
+    bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
+    if bookmakers:
+        bk_parts = []
+        for bk_name, bk_data in bookmakers.items():
+            if isinstance(bk_data, dict):
+                over_odds = bk_data.get("over_odds")
+                under_odds = bk_data.get("under_odds")
+                bk_parts.append(f"{bk_name}: over {over_odds} / under {under_odds}")
+        if bk_parts:
+            parts.append(" | ".join(bk_parts))
+
+    ctx_parts: "list[str]" = []
+    bat_order = p.get("batting_order")
+    confirmed = p.get("is_confirmed_starter")
+    if bat_order is not None:
+        slot_flag = "✓" if confirmed else "?"
+        ctx_parts.append(f"bat#{bat_order}{slot_flag}")
+    hot = p.get("hot_streak")
+    cold = p.get("cold_streak")
+    if hot:
+        ctx_parts.append(f"hot({hot})")
+    elif cold:
+        ctx_parts.append(f"cold({cold})")
+    opp_hand = p.get("opp_pitcher_hand")
+    season_ops = p.get("season_ops")
+    vs_left = p.get("vs_left_ops")
+    vs_right = p.get("vs_right_ops")
+    if opp_hand in ("L", "R") and season_ops:
+        split_ops = vs_left if opp_hand == "L" else vs_right
+        if split_ops:
+            ratio = round(float(split_ops) / float(season_ops), 2)  # type: ignore[arg-type]
+            ctx_parts.append(f"vs{opp_hand}={ratio:.2f}xOPS")
+    park = p.get("park_factor_tier")
+    elev = p.get("elevation_tier")
+    is_home = p.get("is_home")
+    if park and park != "neutral":
+        ctx_parts.append(f"park={park}")
+    if elev and elev == "high":
+        ctx_parts.append("elev=high")
+    if is_home is not None:
+        ctx_parts.append("home" if is_home else "away")
+    ump = p.get("umpire_name")
+    if ump:
+        ctx_parts.append(f"ump={ump}")
+    k9 = p.get("opp_sp_k9")
+    bb9 = p.get("opp_sp_bb9")
+    if k9 is not None:
+        ctx_parts.append(f"SP_K9={k9:.1f}")
+    if bb9 is not None:
+        ctx_parts.append(f"SP_BB9={bb9:.1f}")
+    opp = p.get("opponent_abbr")
+    if opp:
+        ctx_parts.append(f"vs={opp}")
+    if ctx_parts:
+        parts.append("[" + " ".join(ctx_parts) + "]")
+
+    return " | ".join(parts)
+
+
+def build_prop_llm_take_prompt(
+    props: "list[dict[str, object]]",
+    near_misses: "list[dict[str, object]] | None" = None,
+) -> "tuple[str, str]":
     """Return (system, user) prompts for a batched prop LLM-take call.
 
     Args:
-        props: The final top_prop_opportunities result list as built by
-               _build_top_prop_opportunities() in handlers.py. Each entry must
-               have player_id, player_name, team, market, and a blackkatt_instinct
-               dict with direction, predicted_value, probability, market_probability,
-               edge_pp.
+        props: The final top_prop_opportunities result list. Each entry must have
+               player_id, player_name, team, market, and a blackkatt_instinct dict
+               with direction, predicted_value, probability, market_probability, edge_pp.
+        near_misses: Optional list of near-miss prop candidates for the nomination task.
+                     Each entry has player_id, player_name, team, market, direction,
+                     predicted_value, edge_pp, and scoring-engine context fields.
+                     When None or empty, the nomination section is omitted and the
+                     response schema remains a bare JSON array (backwards-compatible).
     """
     cfg = load_prompt("prop_llm_take")
     ctx = get_active_config().prompt_context
     system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
     schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
 
-    rows: list[str] = []
-    for p in props:
-        player_id = str(p.get("player_id") or "")
-        player_name = str(p.get("player_name") or "")
-        team = str(p.get("team") or "")
-        market = str(p.get("market") or "")
-        instinct: "dict[str, object]" = dict(p.get("blackkatt_instinct") or {})  # type: ignore[arg-type]
-        direction = str(instinct.get("direction") or "over")
-        predicted = instinct.get("predicted_value")
-        our_prob = instinct.get("probability")
-        mkt_prob = instinct.get("market_probability")
-        edge_pp = instinct.get("edge_pp")
+    props_block = "\n".join(_build_prop_row(p) for p in props) if props else "(no props)"
 
-        predicted_str = f"{predicted}" if predicted is not None else "N/A"
-        our_prob_str = f"{round(float(our_prob) * 100)}%" if our_prob is not None else "N/A"
-        mkt_prob_str = f"{round(float(mkt_prob) * 100)}%" if mkt_prob is not None else "N/A"
-        edge_str = f"+{edge_pp}pp" if edge_pp is not None else "N/A"
+    if near_misses:
+        nm_block = "\n".join(_build_prop_row(nm) for nm in near_misses)
+        user = f"""Props to evaluate ({len(props)} total):
+{props_block}
 
-        sharp_flag = "Sharp" if p.get("is_sharp") else "Soft"
-        parts = [
-            f"player_id={player_id}",
-            f"{player_name} ({team})" if team else player_name,
-            f"market={market}",
-            direction,
-            f"predicted={predicted_str}",
-            f"our_prob={our_prob_str}",
-            f"mkt_prob={mkt_prob_str}",
-            f"edge={edge_str}",
-            sharp_flag,
-        ]
+Near-miss props for nomination consideration ({len(near_misses)} total):
+{nm_block}
 
-        bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
-        if bookmakers:
-            bk_parts = []
-            for bk_name, bk_data in bookmakers.items():
-                if isinstance(bk_data, dict):
-                    over_odds = bk_data.get("over_odds")
-                    under_odds = bk_data.get("under_odds")
-                    bk_parts.append(f"{bk_name}: over {over_odds} / under {under_odds}")
-            if bk_parts:
-                parts.append(" | ".join(bk_parts))
-
-        # Scoring-engine context signals — present when _merge_scoring_context ran.
-        # Build a compact context block so Haiku can evaluate the reasoning chain,
-        # not just the output edge number.
-        ctx_parts: "list[str]" = []
-        bat_order = p.get("batting_order")
-        confirmed = p.get("is_confirmed_starter")
-        if bat_order is not None:
-            slot_flag = "✓" if confirmed else "?"
-            ctx_parts.append(f"bat#{bat_order}{slot_flag}")
-        hot = p.get("hot_streak")
-        cold = p.get("cold_streak")
-        if hot:
-            ctx_parts.append(f"hot({hot})")
-        elif cold:
-            ctx_parts.append(f"cold({cold})")
-        opp_hand = p.get("opp_pitcher_hand")
-        season_ops = p.get("season_ops")
-        vs_left = p.get("vs_left_ops")
-        vs_right = p.get("vs_right_ops")
-        if opp_hand in ("L", "R") and season_ops:
-            split_ops = vs_left if opp_hand == "L" else vs_right
-            if split_ops:
-                ratio = round(float(split_ops) / float(season_ops), 2)  # type: ignore[arg-type]
-                ctx_parts.append(f"vs{opp_hand}={ratio:.2f}xOPS")
-        park = p.get("park_factor_tier")
-        elev = p.get("elevation_tier")
-        is_home = p.get("is_home")
-        if park and park != "neutral":
-            ctx_parts.append(f"park={park}")
-        if elev and elev == "high":
-            ctx_parts.append("elev=high")
-        if is_home is not None:
-            ctx_parts.append("home" if is_home else "away")
-        ump = p.get("umpire_name")
-        if ump:
-            ctx_parts.append(f"ump={ump}")
-        k9 = p.get("opp_sp_k9")
-        bb9 = p.get("opp_sp_bb9")
-        if k9 is not None:
-            ctx_parts.append(f"SP_K9={k9:.1f}")
-        if bb9 is not None:
-            ctx_parts.append(f"SP_BB9={bb9:.1f}")
-        opp = p.get("opponent_abbr")
-        if opp:
-            ctx_parts.append(f"vs={opp}")
-        if ctx_parts:
-            parts.append("[" + " ".join(ctx_parts) + "]")
-
-        rows.append(" | ".join(parts))
-
-    props_block = "\n".join(rows) if rows else "(no props)"
-
-    user = f"""Props to evaluate ({len(props)} total):
+Output schema (return only this JSON object):
+{schema}"""
+    else:
+        # No near-misses: return bare array for backwards compatibility with callers
+        # that don't yet handle the wrapped object format.
+        bare_schema = schema
+        try:
+            # Extract just the takes array schema from the object schema
+            import re as _re
+            m = _re.search(r'"takes":\s*(\[.*?\])', schema, _re.DOTALL)
+            if m:
+                bare_schema = m.group(1)
+        except Exception:
+            pass
+        user = f"""Props to evaluate ({len(props)} total):
 {props_block}
 
 Output schema (return only this JSON array, one object per prop, same order):
-{schema}"""
+{bare_schema}"""
 
     return system, user
 
