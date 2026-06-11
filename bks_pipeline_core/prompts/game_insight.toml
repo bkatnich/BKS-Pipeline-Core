@@ -53,3 +53,31 @@ text = """\
   "line_movement_signal": "<sharp|fade|neutral>"
 }}\
 """
+
+# NOTE: build_game_insight_prompt() in pipeline/prompts.py assembles the user
+# message directly in Python — this [user] section is a documentation contract
+# only, not rendered by load_prompt(). Keep in sync with the builder.
+[user]
+text = """\
+Game: {away} @ {home} — {game_datetime}
+Lines: O/U {over_under} | {home} ITT {home_implied_total} | {away} ITT {away_implied_total} | Spread {home} {home_spread}
+[Opening line deltas if ou_open + home_implied_open are present]
+Park: {home_park_label}
+Pitchers: {home} SP: {home_probable_pitcher} | {away} SP: {away_probable_pitcher}
+Umpire: {umpire}
+Bullpen load (last 3d): {home}: {home_bullpen_ip} IP | {away}: {away_bullpen_ip} IP
+{home} defense (avg PA allowed per game by pos): ...
+{away} defense (avg PA allowed per game by pos): ...
+
+Players (sorted by opportunity score):
+[one row per player: name (team, pos) | opp=N | range=floor-ceil | recent=N | season=N | bat#N✓/? | hot(N)/cold(N) | [injury] | signals=...]
+
+key_players_input (write edge_sentence for each, preserve player_id):
+[one row per key player: player_id=... | name (team, pos) | opp=N | range=floor-ceil | hot(N)/cold(N)]
+
+Prop lines with edge (use for prop_picks):
+[one row per prop: player_id=... | market direction | model=N% | edge=+Npp]
+
+Output schema (return only this JSON object, no prose):
+{schema}\
+"""
