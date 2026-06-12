@@ -7,7 +7,6 @@ Firestore at translations/{lang}/{sha256(text)} with a 30-day TTL.
 
 import hashlib
 import logging
-import threading
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
