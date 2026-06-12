@@ -78,15 +78,16 @@ Omit the nominations key entirely if no near-miss section is provided. \
 --- TASK 3: SYNTHESIZE THE SLATE ---
 
 After evaluating and nominating, synthesize cross-prop patterns. \
-Your job: rank the surviving props (takes where agrees=true) by conviction, \
-write a concise narrative for the top plays, and flag structural contradictions. \
+Your job: return ranked_picks as an ordered list of "player_id:market" strings — \
+agrees=true props only, highest conviction first. Write a concise narrative for \
+the top 2-3 plays. Flag structural contradictions. \
 Base every claim strictly on the props and game lines provided.\
 """
 
 [schema]
 # takes: per-prop evaluation (same order as input, all input props must appear)
 # nominations: near-miss props nominated for addition; [] or omitted if no near-miss section
-# ranked_picks: surviving props sorted by conviction (agrees=true only; omit faded props)
+# ranked_picks: ordered list of "player_id:market" strings — agrees=true only, highest conviction first
 # daily_prop_narrative: 2-3 sentences on the 2-3 highest-conviction plays
 # contradictions: cross-prop structural tensions (e.g. hits over + team total under same game)
 text = """\
@@ -110,14 +111,7 @@ text = """\
       "insight": "1 sentence: the specific context signals that make this a bet despite no automatic edge."
     }}
   ],
-  "ranked_picks": [
-    {{
-      "player_id": "string — copy exactly from input",
-      "market": "string — copy exactly from input",
-      "conviction": "high | medium | low",
-      "conviction_reason": "1 sentence: the single strongest signal supporting this pick."
-    }}
-  ],
+  "ranked_picks": ["player_id:market", "..."],
   "daily_prop_narrative": "2-3 sentences covering the 2-3 highest-conviction plays and why they cohere as a slate strategy.",
   "contradictions": [
     "1 string per structural tension — e.g. hits over AND team total under in same game"

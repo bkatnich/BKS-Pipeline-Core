@@ -329,7 +329,7 @@ Output schema (return only this JSON object, no prose):
 # ---------------------------------------------------------------------------
 
 
-def _build_prop_row(p: "dict[str, object]") -> str:
+def _build_prop_row(p: "dict[str, object]", include_bookmakers: bool = True) -> str:
     """Render a single prop dict as a compact text row for LLM prompts."""
     player_id = str(p.get("player_id") or "")
     player_name = str(p.get("player_name") or "")
@@ -360,16 +360,17 @@ def _build_prop_row(p: "dict[str, object]") -> str:
         sharp_flag,
     ]
 
-    bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
-    if bookmakers:
-        bk_parts = []
-        for bk_name, bk_data in bookmakers.items():
-            if isinstance(bk_data, dict):
-                over_odds = bk_data.get("over_odds")
-                under_odds = bk_data.get("under_odds")
-                bk_parts.append(f"{bk_name}: over {over_odds} / under {under_odds}")
-        if bk_parts:
-            parts.append(" | ".join(bk_parts))
+    if include_bookmakers:
+        bookmakers: "dict[str, object]" = dict(p.get("bookmakers") or {})  # type: ignore[arg-type]
+        if bookmakers:
+            bk_parts = []
+            for bk_name, bk_data in bookmakers.items():
+                if isinstance(bk_data, dict):
+                    over_odds = bk_data.get("over_odds")
+                    under_odds = bk_data.get("under_odds")
+                    bk_parts.append(f"{bk_name}: over {over_odds} / under {under_odds}")
+            if bk_parts:
+                parts.append(" | ".join(bk_parts))
 
     ctx_parts: "list[str]" = []
     bat_order = p.get("batting_order")
@@ -615,7 +616,8 @@ def build_prop_combined_prompt(
     system: str = resolve_sport_tokens(str((cfg["system"])["text"]), ctx)  # type: ignore[index]
     schema: str = resolve_sport_tokens(str((cfg["schema"])["text"]), ctx)  # type: ignore[index]
 
-    props_block = "\n".join(_build_prop_row(p) for p in props) if props else "(no props)"
+    # Bookmakers omitted: odds aren't used by any decision rule in this prompt.
+    props_block = "\n".join(_build_prop_row(p, include_bookmakers=False) for p in props) if props else "(no props)"
 
     # Build deduplicated game lines block (same logic as build_prop_slate_synthesis_prompt).
     seen_games: "set[tuple[str, str]]" = set()
@@ -653,7 +655,7 @@ def build_prop_combined_prompt(
     games_block = "\n".join(game_lines) if game_lines else "N/A"
 
     if near_misses:
-        nm_block = "\n".join(_build_prop_row(nm) for nm in near_misses)
+        nm_block = "\n".join(_build_prop_row(nm, include_bookmakers=False) for nm in near_misses)
         user = f"""Game lines:
 {games_block}
 
