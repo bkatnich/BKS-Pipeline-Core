@@ -14,6 +14,26 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Fields written by the scoring engine (_write_game_totals / compute_game_totals_baseball)
+# that must survive a schedule re-sync. BDL fetch payloads never include these — without
+# the pre-read merge, every sync_today_games call silently strips the enrichment.
+_GAME_ENRICHMENT_FIELDS: frozenset[str] = frozenset({
+    "bk_ou_pick",
+    "bk_ou_edge",
+    "bk_ou_confidence",
+    "bk_winner",
+    "bk_winner_confidence",
+    "bk_spread_pick",
+    "bk_spread_pick_covers",
+    "bk_spread_confidence",
+    "proj_total",
+    "home_proj_total",
+    "visitor_proj_total",
+    "series_games",
+    "series_anchor",
+    "series_venue_avg",
+})
+
 
 def write_games(db: Any, date_str: str, games: list[dict[str, Any]]) -> None:
     """Write today's game schedule to Firestore using the subcollection layout.
@@ -21,13 +41,47 @@ def write_games(db: Any, date_str: str, games: list[dict[str, Any]]) -> None:
     Creates:
       - games/{date_str} parent doc with metadata
       - games/{date_str}/matchups/{game_id} for each individual game
+
+    Preserves scoring-engine enrichment fields (bk_ou_pick, proj_total, etc.) that
+    are written after the initial schedule sync and must not be overwritten by
+    subsequent BDL re-fetches.
     """
+    games_ref = db.collection("games").document(date_str)
+
+    # Pre-read: collect any enrichment fields already written by the scoring engine
+    # so they survive the games_list overwrite. One extra read per call (3×/day max).
+    existing_snap = games_ref.get()
+    preserved: dict[str, dict[str, Any]] = {}
+    if existing_snap.exists:
+        existing_list: list[dict[str, Any]] = (existing_snap.to_dict() or {}).get("games_list") or []
+        for eg in existing_list:
+            gid = str(eg.get("game_id") or "")
+            if gid:
+                saved = {k: v for k, v in eg.items() if k in _GAME_ENRICHMENT_FIELDS}
+                if saved:
+                    preserved[gid] = saved
+
+    # Merge enrichment back into the incoming raw schedule
+    if preserved:
+        merged: list[dict[str, Any]] = []
+        for g in games:
+            gid = str(g.get("game_id") or "")
+            entry = dict(g)
+            if gid in preserved:
+                entry.update(preserved[gid])
+            merged.append(entry)
+        games = merged
+        logger.info(
+            "write_games: preserved enrichment for %d/%d games on %s",
+            sum(1 for g in games if str(g.get("game_id") or "") in preserved),
+            len(games),
+            date_str,
+        )
+
     playing_abbrs = list({abbr for g in games for abbr in (g.get("home_team_abbr"), g.get("visitor_team_abbr")) if abbr})
     has_playoff_games = any(g.get("game_type") == "playoff" for g in games)
 
-    games_ref = db.collection("games").document(date_str)
-
-    # Write parent metadata doc — merge=True preserves odds written by sync_odds.
+    # merge=True preserves odds written by sync_odds at the doc level.
     # games_list is a denormalized copy so load_games_doc can read everything in one round trip.
     games_ref.set(
         {
