@@ -14,40 +14,53 @@ No prose outside the JSON object. The first character of your response must be {
 
 --- TASK 1: EVALUATE EXISTING PROPS ---
 
-CONFIDENCE IS DETERMINED BY SIGNAL COUNT — NOT CALIBRATION JUDGMENT: \
-Before writing the confidence field for any take where agrees=false, count the named signals \
-in your insight sentence. Apply the rule exactly: \
-  — Two or more named disagree signals in your insight → confidence MUST be "high". \
-  — Exactly one named disagree signal → confidence MUST be "medium". \
-  — No named signal, or signals are ambiguous → confidence MUST be "low". \
+SIGNAL VOCABULARY: The context block for each prop uses these exact tokens. \
+You MUST cite signals using these tokens in your insight sentence — not paraphrased prose: \
+bat#N✓/? = confirmed/unconfirmed batting order slot (leadoff vs bottom-order matters for counting stats); \
+hot(N)/cold(N) = recent streak (N games); \
+vsL/vsR=X.XXxOPS = batter split OPS ratio vs opposing pitcher hand (>1.0 = favorable, <1.0 = unfavorable); \
+park=hitter/pitcher = park factor tier; elev=high = high-elevation boost (Coors-tier); \
+home/away = venue; ump=Name = home plate umpire; \
+SP_K9/SP_BB9 = opposing starter K and walk rates (higher K9 → more Ks available for batters); \
+vs=OPP = opposing team. \
+
+AGREES RULE — apply in this exact order: \
+1. If edge_pp >= 10.0 AND none of the four strong disagree signals below are present \
+   → agrees MUST be true. Do not override this with general uncertainty. \
+2. If two or more strong disagree signals are present → agrees MUST be false. \
+3. If exactly one strong disagree signal is present → agrees SHOULD be false. \
+4. Default: agrees = true. Agree unless a specific named signal contradicts the edge direction. \
+
+STRONG DISAGREE SIGNALS — these four only; nothing else qualifies: \
+(A) unfavorable split OPS: vsL < 0.85 (vs LHP) or vsR < 0.85 (vs RHP) for the prop stat; \
+(B) cold streak of 3 or more consecutive games: cold(N) where N >= 3; \
+(C) pitcher park tier for a hits or total-bases OVER prop: park=pitcher; \
+(D) edge_pp strictly below 5.0 with zero context tokens present in the prop row. \
+
+THESE ARE NOT DISAGREE SIGNALS — do not use these to justify agrees=false or raise confidence: \
+- Absence of context tokens (null fields, empty context block) — this is a data gap, not evidence against the prop. \
+- A cold streak shorter than 3 games: cold(1) and cold(2) do NOT qualify. \
+- General model uncertainty or low calibrated probability on its own. \
+- Any signal not in the four-item list (A/B/C/D) above. \
+
+CONFIDENCE RULE — determined by token count in your insight, not by judgment: \
+Step 1: Count how many of the four strong disagree signal tokens (A/B/C/D) you cited \
+        BY TOKEN in your insight sentence. Paraphrased prose does not count. \
+Step 2: Apply exactly: \
+  — Two or more token-cited disagree signals → confidence MUST be "high". \
+  — Exactly one token-cited disagree signal → confidence MUST be "medium". \
+  — Zero token-cited disagree signals, OR context block is empty/null → confidence MUST be "low". \
 This rule is mandatory and overrides any internal uncertainty estimate. \
-A favorable signal elsewhere in context does NOT reduce confidence if your insight \
-names two or more independent disagree signals for this specific stat. \
+A prop with edge_pp >= 10.0 and an empty context block that receives agrees=false \
+MUST have confidence="low" — absence of data is not a strong disagree signal. \
 
 CONFIDENCE DETERMINES ACTION: \
 confidence=high + agrees=false → prop is a REMOVAL CANDIDATE (hard removal from board); \
 confidence=medium + agrees=false → prop is demoted in display order; \
 confidence=low + agrees=false → prop is lightly flagged; agrees=true takes priority if any doubt. \
 
-Each prop row includes a bracketed context block with signals that drove the model's edge estimate. \
-Signal legend: \
-bat#N✓/? = confirmed/unconfirmed batting order slot (leadoff vs bottom-order matters for counting stats); \
-hot(N)/cold(N) = recent streak (N games); \
-vsL/vsR=X.XXxOPS = batter's split OPS ratio vs opposing pitcher hand (>1.0 = favorable, <1.0 = unfavorable); \
-park=hitter/pitcher = park factor tier; elev=high = high-elevation boost (Coors-tier); \
-home/away = venue; ump=Name = home plate umpire; \
-SP_K9/SP_BB9 = opposing starter K and walk rates (higher K9 → more Ks available for batters); \
-vs=OPP = opposing team. \
-
-Set agrees=false when the weight of context signals contradicts the edge direction. \
-Strong disagree signals (each counts as one): unfavorable split OPS for the prop stat; cold streak of 3+ games; \
-pitcher park for a hits/TB over; edge_pp below 5.0 with no supporting context. \
-When two or more strong disagree signals are present, agrees MUST be false. \
-Agree with the model's direction unless you can identify at least one strong disagree signal. \
-When edge_pp >= 10.0 and no disagree signals are present, agrees MUST be true. \
-
 Set suggested_value to your estimate of where the stat will land today — \
-deviate from predicted_value only when a specific context signal (split OPS, streak, park, umpire) \
+deviate from predicted_value only when a specific context token (vsL/vsR, cold(N), park, ump) \
 justifies the deviation; otherwise match predicted_value exactly. \
 
 --- TASK 2: NOMINATE NEAR-MISS PROPS ---
@@ -55,7 +68,7 @@ justifies the deviation; otherwise match predicted_value exactly. \
 A near-miss prop did not clear the model's automatic edge threshold but the market line may be \
 mispriced given the context signals. Nominate up to 3 near-miss props where context signals \
 strongly favour one direction. Nomination criteria (ALL must hold): \
-(1) at least two context signals independently support the direction; \
+(1) at least two context tokens independently support the direction; \
 (2) the market line is within 0.5 units of your suggested_value; \
 (3) you would personally bet this prop at the given line. \
 If fewer than 3 props meet all criteria, nominate only those that qualify. \
