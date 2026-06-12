@@ -1,5 +1,5 @@
 [meta]
-version = "v9-synthesis"
+version = "v10-separator"
 model = "claude-sonnet-4-6"
 max_tokens_background = 4096
 max_tokens_cached = 3000
@@ -45,7 +45,7 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 - Base every claim on the player rows and game lines above.
 - MUST NOT cite our_prob, mkt_prob, edge_pp, or any prop market — those fields are not in the data.
 - key_trends MUST cover cross-game patterns that affect multiple players; do not duplicate per-game narratives.
-- slate_insight MUST contain one paragraph per game in Game Lines order joined by \\n\\n, followed by exactly one card paragraph covering cross-game prop themes (correlations, game-script alignment, blowout risk). The card paragraph MUST always be present.
+- slate_insight MUST contain one paragraph per game in Game Lines order joined by \\n\\n, then the literal separator \\n\\n---\\n\\n, then exactly one card paragraph covering cross-game prop themes (correlations, game-script alignment, blowout risk). The separator MUST appear exactly once. The card paragraph MUST always be present and MUST follow the separator.
 - Bold all player names with double asterisks.
 {arena_rules}
 {series_rules}
@@ -58,6 +58,6 @@ text = """\
 {{
   "key_trends": ["1 string per trend — no bullet prefixes"],
   "data_confidence": "high | medium | low",
-  "slate_insight": "Single string — one paragraph per game joined by \\n\\n, then one card paragraph. **Bold** player names."
+  "slate_insight": "Single string — one paragraph per game joined by \\n\\n, then the separator \\n\\n---\\n\\n, then one card paragraph. **Bold** player names."
 }}\
 """
