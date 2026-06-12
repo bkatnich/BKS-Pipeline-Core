@@ -1,5 +1,5 @@
 [meta]
-version = "v2"
+version = "v3-ou-pick"
 model = "claude-haiku-4-5-20251001"
 max_tokens = 1500
 cache_system = true
@@ -26,7 +26,13 @@ line_movement_signal: {sport.line_movement_note} \
   MUST return neutral if either ou_open or home_implied_open is absent or shown as N/A — both values MUST be present to compute movement. \
 Umpire name is provided for context only. Do not infer strike zone or scoring tendencies from the name alone — the umpire influence is already incorporated into the provided O/U and ITT lines. \
 Defense values are average plate appearances allowed per game to each batting position bucket — higher means more opportunities. \
-Bullpen load values (IP over last 3 days) use thresholds: fresh < 6.0 IP, moderate 6-12 IP, fatigued > 12.0 IP.\
+Bullpen load values (IP over last 3 days) use thresholds: fresh < 6.0 IP, moderate 6-12 IP, fatigued > 12.0 IP. \
+
+ou_pick: MUST be exactly one of the three string literals: "over", "under", or "push" — no other values are valid. \
+  If bk_ou_pick is "over" or "under" in the BK Projection block, you MUST copy it verbatim — do not override the model's deterministic call. \
+  Only when bk_ou_pick is shown as "none" MUST you adjudicate using the contextual signals (line movement, umpire, park, bullpen, day/night, DAGN). \
+  "push" is only valid when you have no conviction after reviewing all signals; strive to commit to over or under. \
+ou_pick_rationale: 1 sentence citing the specific signal(s) that drove the pick. Required even when echoing bk_ou_pick.\
 """
 
 [schema]
@@ -50,7 +56,9 @@ text = """\
       "rationale": "1 sentence: why this line has edge given the matchup and model signal."
     }}
   ],
-  "line_movement_signal": "<sharp|fade|neutral>"
+  "line_movement_signal": "<sharp|fade|neutral>",
+  "ou_pick": "<over|under|push>",
+  "ou_pick_rationale": "1 sentence: the specific signal(s) that drove the pick."
 }}\
 """
 

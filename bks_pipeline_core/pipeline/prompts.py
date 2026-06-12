@@ -145,6 +145,9 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
             home_bullpen_ip, away_bullpen_ip,  (may be None)
             home_defense, away_defense,  (pts_allowed_by_position dicts — may be None)
             players,  (list of snapshot entry dicts, both teams)
+            bk_ou_pick,  ("over"/"under"/None — deterministic model call; None = push zone)
+            proj_total,  (blended run total from 10-signal model — may be None)
+            bk_ou_edge,  (abs delta between proj_total and Vegas line — may be None)
     """
     cfg = load_prompt("game_insight")
     ctx = get_active_config().prompt_context
@@ -155,6 +158,9 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
     away: str = str(game_ctx.get("away_team") or "")
     game_dt: str = str(game_ctx.get("game_datetime") or "")
     ou = game_ctx.get("over_under")
+    bk_ou_pick = game_ctx.get("bk_ou_pick")
+    proj_total = game_ctx.get("proj_total")
+    bk_ou_edge = game_ctx.get("bk_ou_edge")
     home_itt = game_ctx.get("home_implied_total")
     away_itt = game_ctx.get("away_implied_total")
     spread = game_ctx.get("home_spread")
@@ -176,6 +182,13 @@ def build_game_insight_prompt(game_ctx: "dict[str, object]") -> "tuple[str, str]
     spread_str = f"{home} {spread:+.1f}" if spread is not None else "N/A"
 
     lines_block = f"Lines: O/U {ou_str} | {home} ITT {home_itt_str} | {away} ITT {away_itt_str} | Spread {spread_str}"
+
+    # BK projection block — deterministic model output; shown to ground the LLM's ou_pick.
+    if proj_total is not None:
+        bk_ou_pick_str = str(bk_ou_pick).lower() if bk_ou_pick is not None else "none"
+        bk_ou_edge_str = f" (edge {bk_ou_edge:.1f})" if bk_ou_edge is not None else ""
+        lines_block += f"\nBK Projection: proj_total={proj_total} | bk_ou_pick={bk_ou_pick_str}{bk_ou_edge_str}"
+
     if ou_open is not None and home_itt_open is not None:
         ou_delta = round(float(ou) - float(ou_open), 1) if ou is not None else None
         itt_delta = round(float(home_itt) - float(home_itt_open), 1) if home_itt is not None else None
