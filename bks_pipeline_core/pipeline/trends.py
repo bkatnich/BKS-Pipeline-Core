@@ -25,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 from bks_pipeline_core.pipeline.scoring import (
-    compute_season_averages,
+    compute_season_averages as _default_compute_season_averages,
     compute_slope,
     compute_streak,
     compute_trend_acceleration,
@@ -81,6 +81,7 @@ class TrendsConfig:
     stats_request_delay: float
     circuit_breaker_threshold: int
     current_season_start: str
+    compute_season_averages: Any = None  # sport-specific override; defaults to core basketball impl
 
 
 # ---------------------------------------------------------------------------
@@ -455,9 +456,10 @@ def fetch_season_stats(
             if pid:
                 rows_by_pid[pid].append(r)
 
+        _compute_averages = cfg.compute_season_averages or _default_compute_season_averages
         for pid in batch_ids:
             player_rows = rows_by_pid.get(pid, [])
-            season_data[pid] = compute_season_averages(player_rows, cfg.min_game_minutes)
+            season_data[pid] = _compute_averages(player_rows, cfg.min_game_minutes)
             raw_rows_by_player[pid] = player_rows
 
         fetched_count += len(batch_ids)
