@@ -81,6 +81,16 @@ After evaluating and nominating, synthesize cross-prop patterns. \
 Your job: return ranked_picks as an ordered list of "player_id:market" strings — \
 agrees=true props only, highest conviction first. Write a concise narrative for \
 the top 2-3 plays. Flag structural contradictions. \
+Then group the surviving props (agrees=true) into 2-5 thematic sections in prop_sections. \
+Grouping rules: \
+  — Group by shared market type first (e.g. all strikeout unders together); \
+  — Then by shared structural condition (park tier, batting slot, opponent); \
+  — A prop may appear in only one section; prefer its strongest grouping. \
+  — tone="edge" for high-model-confidence clusters; "value" for low-bar positive-EV plays; \
+    "caution" for props with structural tension (e.g. pitcher park + hits over). \
+  — theme is optional — write it only when the section has a cross-prop insight worth surfacing. \
+  — display_line: the numeric line extracted from the market string (e.g. "4.5" from "strikeouts_4.5_under"). \
+  — signal: cite one specific token from the context block (bat#, hot(N), vsL/vsR, park=, ump=, SP_K9, etc.). \
 Base every claim strictly on the props and game lines provided.\
 """
 
@@ -115,6 +125,24 @@ text = """\
   "daily_prop_narrative": "2-3 sentences covering the 2-3 highest-conviction plays and why they cohere as a slate strategy.",
   "contradictions": [
     "1 string per structural tension — e.g. hits over AND team total under in same game"
+  ],
+  "prop_sections": [
+    {{
+      "title": "string — section header, e.g. 'Pitcher Strikeout Unders'",
+      "tone": "edge | value | caution",
+      "theme": "one sentence cross-prop insight, or null",
+      "picks": [
+        {{
+          "player_id": "string — copy exactly from input",
+          "player_name": "string",
+          "team": "string — 2-3 letter abbr",
+          "market": "string — copy exactly from input",
+          "display_line": "string — numeric line as string, e.g. '4.5'",
+          "predicted_value": 1.5,
+          "signal": "1 sentence — cite one specific context token"
+        }}
+      ]
+    }}
   ]
 }}\
 """
