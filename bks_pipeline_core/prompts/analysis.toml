@@ -1,5 +1,5 @@
 [meta]
-version = "v10-separator"
+version = "v11-structured"
 model = "claude-sonnet-4-6"
 max_tokens_background = 4096
 max_tokens_cached = 3000
@@ -45,12 +45,13 @@ Today is {today_et}. This is a {game_count}-game {sport_key} {round_description}
 - Base every claim on the player rows and game lines above.
 - MUST NOT cite our_prob, mkt_prob, edge_pp, or any prop market — those fields are not in the data.
 - key_trends MUST cover cross-game patterns that affect multiple players; do not duplicate per-game narratives.
-- slate_insight MUST contain one paragraph per game in Game Lines order joined by \\n\\n, then the literal separator \\n\\n---\\n\\n, then exactly one card paragraph covering cross-game prop themes (correlations, game-script alignment, blowout risk). The separator MUST appear exactly once. The card paragraph MUST always be present and MUST follow the separator.
+- game_narratives MUST contain exactly one string per game in Game Lines order. Each string is one paragraph covering that game's environment, key players, and prop edges.
+- card MUST always be present and cover cross-game prop themes (correlations, game-script alignment, blowout risk). Set to "" if no games.
 - Bold all player names with double asterisks.
 {arena_rules}
 {series_rules}
 {sport.analysis_extra_rules}
-- If game_count is 0 or player_rows is empty, return a valid JSON object with an empty key_trends array; set data_confidence to "low"; set slate_insight to "No games scheduled for this slate."\
+- If game_count is 0 or player_rows is empty, return a valid JSON object with an empty key_trends array, an empty game_narratives array, a card of "", and data_confidence set to "low".\
 """
 
 [schema]
@@ -58,6 +59,7 @@ text = """\
 {{
   "key_trends": ["1 string per trend — no bullet prefixes"],
   "data_confidence": "high | medium | low",
-  "slate_insight": "Single string — one paragraph per game joined by \\n\\n, then the separator \\n\\n---\\n\\n, then one card paragraph. **Bold** player names."
+  "game_narratives": ["one string per game in Game Lines order — one paragraph per entry, **Bold** player names"],
+  "card": "cross-game prop themes — correlations, game-script alignment, blowout risk. **Bold** player names. Empty string if no games."
 }}\
 """
