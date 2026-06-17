@@ -470,7 +470,10 @@ def fetch_season_stats(
 
     logger.info("Season stats fetch complete: %d players", len(season_data))
 
-    bdl_season = cfg.stats_provider.fetch_player_season_stats(player_ids, api_key, logger)
+    try:
+        bdl_season = cfg.stats_provider.fetch_player_season_stats(player_ids, api_key, logger)
+    except NotImplementedError:
+        bdl_season = {}
     for pid, bdl in bdl_season.items():
         if pid in season_data:
             season_data[pid].update(bdl)
